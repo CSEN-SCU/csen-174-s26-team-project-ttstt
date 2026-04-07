@@ -1,27 +1,34 @@
-# Mumble assistant (voice chat + Whisper STT + Piper TTS)
+# TTSTT (Text To Speech To Text)
 
-Full-stack project around **Mumble** (voice), a **web client** fork, and a **Python API** for speech and user preferences — structured for CSEN 174-style delivery (tests, CI, deploy, ADRs).
+Mumble voice chat plus a **FastAPI** backend: **Whisper** for speech-to-text, **Piper** (Hugging Face voices) for text-to-speech, per-user voice settings, and planned **ffmpeg** step (pitch/tempo + loudness normalization). The browser client is based on **mumble-web**; voice relay uses **Murmur**.
 
-## Layout
+**Status:** API and web integration are still being built. `GET /health` on the API is available today.
 
-| Path | Purpose |
-|------|---------|
-| [`apps/web`](apps/web) | Mumble web client (fork of mumble-web) — UI + connection to Murmur + your API |
-| [`apps/api`](apps/api) | FastAPI backend — Whisper STT, Piper TTS, auth, DB (to be expanded) |
-| [`vendor/mumble`](vendor/mumble) | Upstream **Mumble desktop** source — reference only; not part of CI/build |
-| [`infra`](infra) | `docker-compose` for Murmur + Postgres (local dev) |
-| [`docs`](docs) | Journal, syllabus notes, ADRs |
+## Features (roadmap)
+
+- Post spoken audio to an API → transcribe with Whisper → send text in Mumble chat  
+- Read chat aloud with Piper; optional server-side pitch/tempo and default loudnorm  
+- Store voice / prosody preferences per user (Postgres)
+
+## Stack
+
+Python (FastAPI), Node (mumble-web), Docker Compose (Murmur + Postgres), OpenAI Whisper (or compatible API), Piper ONNX from Hugging Face.
 
 ## Quick start
 
-1. **Voice server + DB:** see [`infra/README.md`](infra/README.md).
-2. **API:** see [`apps/api/README.md`](apps/api/README.md).
-3. **Web client:** see [`apps/web/README.md`](apps/web/README.md) (install deps, `npm run build` / dev server per upstream docs).
+1. **Infrastructure** — from [`infra`](infra): `docker compose up -d` (see [`infra/README.md`](infra/README.md)).  
+2. **API** — from [`apps/api`](apps/api): venv, `pip install -e ".[dev]"`, run `uvicorn` (see [`apps/api/README.md`](apps/api/README.md)).  
+3. **Web client** — from [`apps/web`](apps/web): install deps and run/build per [`apps/web/README.md`](apps/web/README.md).
 
-## Nested Git repositories
+Mumble default port: **64738**. API health check: `http://127.0.0.1:8000/health`
 
-`apps/web` and `vendor/mumble` may still contain their own `.git` directories from the original clones. To make this workspace a **single** team repo, remove those nested `.git` folders and `git add` everything from the workspace root (or convert them to [submodules](https://git-scm.com/docs/git-submodule)).
+## Layout
 
-## Syllabus
+| Directory | Role |
+|-----------|------|
+| `apps/api` | Backend (Whisper, Piper, DB) |
+| `apps/web` | Mumble web client |
+| `infra` | Docker Compose (Murmur, Postgres) |
+| `docs` | Project notes and journal |
 
-Course HTML is at the repo root: `CSEN 174_ Software Engineering _ Spring 2026 _ Santa Clara University.html`.
+Optional upstream Mumble **desktop** source is not in this repo; see [`vendor/README.md`](vendor/README.md).

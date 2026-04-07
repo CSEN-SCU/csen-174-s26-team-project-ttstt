@@ -35,7 +35,5 @@ models/
 apps/api/data/
 apps/api/models/
 
-# Vendor desktop build (if someone compiles Mumble in-tree)
-vendor/mumble/build/
-vendor/mumble/**/CMakeFiles/
-vendor/mumble/**/CMakeCache.txt
+# Upstream Mumble desktop source — keep local clone only; do not push (see README)
+vendor/mumble/
