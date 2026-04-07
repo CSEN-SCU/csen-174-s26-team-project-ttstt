@@ -1,14 +1,6 @@
-# Local stack: voice server + Postgres for API development.
-# Murmur: point mumble-web at localhost:64738 (default Mumble port).
+# Local Postgres for API + bot development (Discord runs on Discord's infra).
 
 services:
-  murmur:
-    image: mumblevoip/mumble-server:latest
-    restart: unless-stopped
-    ports:
-      - "64738:64738/tcp"
-      - "64738:64738/udp"
-
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -19,7 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      postgres_data:/var/lib/postgresql/data
 
 volumes:
   postgres_data:

@@ -1,34 +1,30 @@
 # TTSTT (Text To Speech To Text)
 
-Mumble voice chat plus a **FastAPI** backend: **Whisper** for speech-to-text, **Piper** (Hugging Face voices) for text-to-speech, per-user voice settings, and planned **ffmpeg** step (pitch/tempo + loudness normalization). The browser client is based on **mumble-web**; voice relay uses **Murmur**.
+By: Noelle Evanich
 
-**Status:** API and web integration are still being built. `GET /health` on the API is available today.
+**CSEN 174 — planning / design phase.** This repository documents the **intended** product; **there is no application code here yet** (the `apps/` tree has been removed until implementation begins).
 
-## Features (roadmap)
+## Intended product (summary)
 
-- Post spoken audio to an API → transcribe with Whisper → send text in Mumble chat  
-- Read chat aloud with Piper; optional server-side pitch/tempo and default loudnorm  
-- Store voice / prosody preferences per user (Postgres)
+A **Discord bot** plus a **backend service** so participants can:
 
-## Stack
+- Turn **voice** into **text** in a server (via **automatic speech recognition**, e.g. Whisper-class APIs).
+- Hear **text chat** read aloud in **voice channels** (**neural text-to-speech**, e.g. Piper-style models from Hugging Face), with per-user voice and prosody settings.
+- Apply optional **server-side audio post-processing** (e.g. ffmpeg: pitch/tempo, default loudness normalization).
 
-Python (FastAPI), Node (mumble-web), Docker Compose (Murmur + Postgres), OpenAI Whisper (or compatible API), Piper ONNX from Hugging Face.
+The course-facing **product vision** and rationale are in **[`docs/product-vision.md`](docs/product-vision.md)**.
 
-## Quick start
+## What is in this repo right now
 
-1. **Infrastructure** — from [`infra`](infra): `docker compose up -d` (see [`infra/README.md`](infra/README.md)).  
-2. **API** — from [`apps/api`](apps/api): venv, `pip install -e ".[dev]"`, run `uvicorn` (see [`apps/api/README.md`](apps/api/README.md)).  
-3. **Web client** — from [`apps/web`](apps/web): install deps and run/build per [`apps/web/README.md`](apps/web/README.md).
+| Location | Contents |
+|----------|----------|
+| [`docs/`](docs) | Product vision, learning journal, and other course artifacts |
+| [`infra/`](infra) | Example **Docker Compose** for **Postgres** (for when the backend is implemented) — optional local dev database |
 
-Mumble default port: **64738**. API health check: `http://127.0.0.1:8000/health`
+**Not included yet:** Python packages for a Discord bot or API, CI workflows, or deployment—those will land under a future `apps/` (or similar) layout once the team moves from planning to implementation.
 
-## Layout
+## For course staff
 
-| Directory | Role |
-|-----------|------|
-| `apps/api` | Backend (Whisper, Piper, DB) |
-| `apps/web` | Mumble web client |
-| `infra` | Docker Compose (Murmur, Postgres) |
-| `docs` | Project notes and journal |
-
-Optional upstream Mumble **desktop** source is not in this repo; see [`vendor/README.md`](vendor/README.md).
+- **Scope:** Software engineering process (vision, architecture, testing, and deployment **to be documented** as the quarter progresses).  
+- **AI:** The design centers on **speech recognition** and **speech synthesis** as the core capabilities (vendor-agnostic in documentation).  
+- **Status:** **Pre-implementation** — use `docs/` and team process artifacts to assess planning; do not expect a runnable demo from this repository state alone.

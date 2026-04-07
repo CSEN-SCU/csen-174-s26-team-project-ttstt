@@ -1,39 +1,35 @@
-# API
-apps/api/.venv/
-apps/api/.env
+# Python
 **/__pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
+.venv/
+**/.venv/
 .coverage
 coverage.xml
 htmlcov/
 dist/
 build/
 
-# Web (root repo: keep even if apps/web has its own .gitignore)
-apps/web/node_modules/
-apps/web/dist/
-apps/web/coverage/
-apps/web/.nyc_output/
+# Node (if reintroduced)
+node_modules/
 
 # OS / IDE
 .DS_Store
 .idea/
 .vscode/
 
-# Repo-level secrets (optional shared env at root)
+# Secrets
 .env
 .env.local
 .env.*.local
 
-# Piper / HF / TTS caches (when added)
+# Model / cache dirs (when code exists)
 .cache/
 models/
-apps/api/data/
-apps/api/models/
 
-# Upstream Mumble desktop source — keep local clone only; do not push (see README)
-vendor/mumble/
+# Piper / HF / API data dirs (convention TBD)
+**/data/
+**/models/
