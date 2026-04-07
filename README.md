@@ -1,6 +1,6 @@
 # TTSTT (Text To Speech To Text)
 
-By: Noelle Evanich, Diego Silva
+By: Noelle Evanich, Diego Silva, Dana Steinke
 
 **CSEN 174 — planning / design phase.** This repository documents the **intended** product; **there is no application code here yet** (the `apps/` tree has been removed until implementation begins).
 
