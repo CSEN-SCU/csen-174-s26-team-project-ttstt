@@ -25,3 +25,9 @@
 **How AI makes this possible.** **Automatic speech recognition** at current quality can turn **short captures** into **messages in-channel** without a human captioner. **Neural text-to-speech** (e.g. **Piper-class** voices) can **read chat into the voice channel** with **per-user** tuning so identity and prosody stay recognizable. Server-side **normalization and pitch/tempo** keep clips **listenable** across headsets. That bundle is what makes **“speech becomes text”** and **“text becomes voice”** **routine** inside an existing Discord workflow.
 
 **Without-AI test.** Strip **ASR** and you revert to **typing or guessing**—the “what was said” promise for people who **don’t hear VC** collapses. Strip **neural TTS** and typed lines **don’t reliably reach listeners in voice**—you lose **room-scale readout** with **personal voices**. A plain Discord bot without those capabilities is **incrementally helpful**; it does **not** deliver the **accessibility core** of TTSTT. **AI is load-bearing**, not decorative.
+
+---
+
+## How Might We...
+
+**How might we** bridge spoken utterances and written chat into a single, bidirectional flow **as we aim to** ensure all members share the same room regardless of how they hear or speak?.
