@@ -1,0 +1,92 @@
+# TTSTT — Project Rules for Cursor
+
+## What this project is
+
+TTSTT (Text To Speech To Text) is a **Discord bot + companion API** that bridges
+voice and text channels bidirectionally:
+- **Speech → Text:** automatic speech recognition turns spoken audio into posted
+  messages so Deaf / hard-of-hearing users and anyone in noisy environments can
+  follow voice conversations.
+- **Text → Speech:** neural TTS reads written chat aloud in the voice channel
+  with per-user synthetic voice settings, so non-verbal or text-first
+  participants are heard without someone manually reading for them.
+
+See **docs/product-vision.md** for the full product vision, Moore-template
+statement, narrative, and HMW statement. Do not duplicate that content here;
+always defer to the source file.
+
+## Project status
+
+Pre-implementation / planning phase. There is **no
+application code yet**. When implementation begins, code will land under an
+`apps/` directory (or similar layout TBD by the team).
+
+## Repository layout
+
+```
+docs/           Product vision, learning journal, course artifacts
+infra/          Docker Compose for local Postgres (dev database)
+apps/           (future) Discord bot, backend API
+```
+
+## Tech stack (known so far)
+
+| Layer              | Choice / direction                                   |
+|--------------------|------------------------------------------------------|
+| Language           | Python (see .gitignore — tooling already configured) |
+| Database           | PostgreSQL 16 (local via Docker Compose)             |
+| Speech recognition | Whisper-class ASR (vendor-agnostic for now)          |
+| Text-to-speech     | Piper-style neural TTS (e.g. Hugging Face models)    |
+| Audio processing   | ffmpeg for pitch/tempo/loudness normalization         |
+| Bot framework      | discord.py (likely, not yet confirmed)               |
+| Secrets            | `.env` files, never committed (see .gitignore)       |
+
+Update this table as the team finalizes choices.
+
+## Coding conventions
+
+These will solidify as implementation starts. Current agreements:
+
+- **Formatting / linting:** Ruff (`.ruff_cache/` is gitignored).
+- **Type checking:** mypy (`.mypy_cache/` is gitignored).
+- **Testing:** pytest (`.pytest_cache/` is gitignored).
+- **Virtual environments:** `.venv/` at the package root, never committed.
+- **Environment variables:** stored in `.env` / `.env.local`, loaded at runtime
+  (e.g. via `python-dotenv` or equivalent). Never hard-code secrets.
+- **Naming:** snake_case for Python modules, functions, and variables;
+  PascalCase for classes.
+- **Imports:** standard library → third-party → local, separated by blank lines.
+
+## Constraints & design principles
+
+1. **Meet users on Discord.** The primary interface is slash commands and chat
+   commands inside Discord—not a separate web app or dashboard.
+2. **Self-hostable infrastructure.** The API + Postgres run on infrastructure
+   the server operator controls; preferences and processing stay transparent.
+3. **Accessibility is the core, not a feature.** Every design decision should be
+   evaluated against the HMW: "How might we bridge spoken utterances and written
+   chat into a single, bidirectional flow so all members share the same room
+   regardless of how they hear or speak?"
+4. **AI is load-bearing.** ASR and TTS are not add-ons; without them the
+   product's accessibility promise collapses. Keep model choices swappable but
+   always present.
+5. **Low-latency matters.** Speech-to-text and text-to-speech must feel usable
+   during live voice hangs, not after-the-fact summaries.
+
+## What to keep in mind when generating code
+
+- Assume Python 3.11+ unless the team specifies otherwise.
+- Prefer async patterns (asyncio / discord.py's async API) for anything
+  involving Discord or network I/O.
+- Keep AI model calls behind a clean interface so the team can swap providers
+  (e.g. local Whisper vs. cloud ASR) without rewriting bot logic.
+- Audio buffers and voice-channel streams are performance-sensitive; avoid
+  unnecessary copies and prefer streaming over batch where possible.
+- All user-facing text the bot sends should be clear and concise—remember the
+  audience includes people using screen readers or limited displays.
+
+---
+
+*This file will grow as the team makes decisions about architecture, API design,
+deployment, and workflow. Update it whenever a decision is made so Cursor stays
+in sync with the project.*
