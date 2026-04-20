@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Always run transcribe.py with this directory's venv (avoids accidentally using system python).
+cd "$(dirname "$0")" || exit 1
+exec ./.venv/bin/python transcribe.py "$@"
