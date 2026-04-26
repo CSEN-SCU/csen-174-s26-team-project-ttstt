@@ -33,4 +33,3 @@ models/
 # Piper / HF / API data dirs (convention TBD)
 **/data/
 **/models/
-*.mp4
