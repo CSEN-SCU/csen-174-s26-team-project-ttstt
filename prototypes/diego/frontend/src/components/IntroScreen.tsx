@@ -1,10 +1,10 @@
 import { MicIcon, KeyboardIcon, ArrowRightIcon } from "./Icons";
 
 interface IntroScreenProps {
-  onStart: () => void;
+  discordUrl: string;
 }
 
-export default function IntroScreen({ onStart }: IntroScreenProps) {
+export default function IntroScreen({ discordUrl }: IntroScreenProps) {
   return (
     <div className="h-full bg-bg text-text relative overflow-hidden">
       {/* ── Animated background blobs ── */}
@@ -107,7 +107,8 @@ export default function IntroScreen({ onStart }: IntroScreenProps) {
               animation: "fade-in-up 0.7s ease-out 0.3s both",
             }}
           >
-            A real-time overlay that bridges voice and text, so{" "}
+            A Discord-first prototype that helps text-first participants join
+            voice conversations, so{" "}
             <span className="text-text font-medium">
               no one gets left behind
             </span>{" "}
@@ -137,8 +138,8 @@ export default function IntroScreen({ onStart }: IntroScreenProps) {
                   </span>
                 </div>
                 <p className="text-xs text-text-secondary leading-relaxed">
-                  Record your voice — it's transcribed to text and read aloud to
-                  confirm.
+                  Use Discord voice chat with your phone or desktop and hear bot
+                  playback in-channel.
                 </p>
               </div>
             </div>
@@ -161,11 +162,8 @@ export default function IntroScreen({ onStart }: IntroScreenProps) {
                   </span>
                 </div>
                 <p className="text-xs text-text-secondary leading-relaxed">
-                  Press{" "}
-                  <kbd className="font-mono text-accent bg-accent/10 px-1.5 py-0.5 rounded text-[10px]">
-                    /
-                  </kbd>{" "}
-                  to type a message — it's spoken aloud automatically.
+                  Type `/say` in Discord to convert your message into Azure
+                  neural speech in the current voice channel.
                 </p>
               </div>
             </div>
@@ -191,7 +189,7 @@ export default function IntroScreen({ onStart }: IntroScreenProps) {
 
           {/* Start button */}
           <button
-            onClick={onStart}
+            onClick={() => window.open(discordUrl, "_blank", "noopener,noreferrer")}
             className="group relative cursor-pointer inline-flex items-center gap-3 text-bg font-semibold text-sm px-10 py-4 rounded-2xl transition-all duration-300 hover:scale-[1.03] active:scale-[0.97]"
             style={{
               background:
@@ -200,7 +198,7 @@ export default function IntroScreen({ onStart }: IntroScreenProps) {
                 "fade-in-up 0.7s ease-out 0.55s both, glow-breathe 3s ease-in-out infinite 1.2s",
             }}
           >
-            Start Demo
+            Open Discord Demo
             <ArrowRightIcon className="text-base transition-transform duration-300 group-hover:translate-x-1" />
           </button>
 

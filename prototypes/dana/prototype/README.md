@@ -1,9 +1,8 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/NfqHRKdw)
 # TTSTT (Text To Speech To Text)
 
 By: Noelle Evanich, Diego Silva, Dana Steinke
 
-**CSEN 174 — planning / design phase.** This repository documents the **intended** product; **there is no application code here yet** (the `apps/` tree has been removed until implementation begins).
+**CSEN 174 — planning / design phase.** This repository documents the **intended** product. A small **STT prototype** lives under [`apps/cli/`](apps/cli/) to try Whisper on live microphone input (see that folder’s `requirements.txt`).
 
 ## Intended product (summary)
 
@@ -19,10 +18,31 @@ The course-facing **product vision** and rationale are in **[`docs/product-visio
 
 | Location | Contents |
 |----------|----------|
+| [`apps/cli/`](apps/cli) | **Prototype:** command-line mic → **local Whisper (faster-whisper)** → transcript printed to the terminal |
 | [`docs/`](docs) | Product vision, learning journal, and other course artifacts |
 | [`infra/`](infra) | Example **Docker Compose** for **Postgres** (for when the backend is implemented) — optional local dev database |
 
-**Not included yet:** Python packages for a Discord bot or API, CI workflows, or deployment—those will land under a future `apps/` (or similar) layout once the team moves from planning to implementation.
+**Not included yet:** A Discord bot, full backend API, CI workflows, or deployment automation beyond this local STT sketch.
+
+### Run the STT prototype (CLI)
+
+Work **inside** [`apps/cli/`](apps/cli) so the virtualenv path is correct. Use the venv’s Python explicitly (avoid `python transcribe.py`, which often picks up the system interpreter):
+
+```sh
+cd apps/cli
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+# optional: copy .env.example → .env to set TTSTT_MODEL / TTSTT_COMPUTE_TYPE defaults
+.venv/bin/python transcribe.py
+```
+
+Optional: `chmod +x run && ./run` runs `.venv/bin/python transcribe.py` for you.
+
+**Fish shell:** do not `source .venv/bin/activate` (use `.venv/bin/activate.fish` if you want activation), or skip activation and only use `.venv/bin/python` as above.
+
+The first run may download the selected Whisper model weights.
+
+On many Linux systems, install PortAudio dev headers before `pip install` so `sounddevice` can build (for example on Debian/Ubuntu: `portaudio19-dev`).
 
 ## For course staff
 
