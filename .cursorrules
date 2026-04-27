@@ -15,18 +15,25 @@ See **docs/product-vision.md** for the full product vision, Moore-template
 statement, narrative, and HMW statement. Do not duplicate that content here;
 always defer to the source file.
 
+See **architecture/architecture.md** for the system architecture and consolidation plan.
+
 ## Project status
 
-Pre-implementation / planning phase. There is **no
-application code yet**. When implementation begins, code will land under an
-`apps/` directory (or similar layout TBD by the team).
+Planning and **architecture are documented**; exploratory implementation lives
+under **`prototypes/`** (per-member spikes—not the final package layout). The
+**consolidated** Discord bot + companion API is planned under **`apps/`** once
+the team merges work per **architecture/architecture.md**. Prefer that document
+for stack decisions and target structure over ad-hoc prototype folders.
 
 ## Repository layout
 
 ```
+.cursor/        Cursor workspace skills (optional helpers for agents)
+architecture/   System architecture, C4 diagrams, consolidation plan (architecture.md)
 docs/           Product vision, learning journal, course artifacts
 infra/          Docker Compose for local Postgres (dev database)
-apps/           (future) Discord bot, backend API
+prototypes/     Per-member experiments; not the canonical product tree
+apps/           (future) Consolidated bot + API after consolidation
 ```
 
 ## Tech stack (known so far)
@@ -38,7 +45,7 @@ apps/           (future) Discord bot, backend API
 | Speech recognition | Whisper-class ASR (vendor-agnostic for now)          |
 | Text-to-speech     | Piper-style neural TTS (e.g. Hugging Face models)    |
 | Audio processing   | ffmpeg for pitch/tempo/loudness normalization         |
-| Bot framework      | discord.py (likely, not yet confirmed)               |
+| Bot framework      | discord.py (team direction; see architecture doc)    |
 | Secrets            | `.env` files, never committed (see .gitignore)       |
 
 Update this table as the team finalizes choices.
