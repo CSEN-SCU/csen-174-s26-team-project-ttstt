@@ -50,3 +50,24 @@ def test_transcribe_audio_returns_empty_text_for_silence() -> None:
     # Assert
     assert isinstance(result, str)
     assert result == ""
+
+
+def test_transcribe_audio_normalizes_whitespace_only_output_to_empty_text() -> None:
+    # As a Discord participant, whitespace-only ASR output does not create junk chat messages.
+
+    # Arrange
+    transcribe_audio = _load_transcribe_audio()
+
+    class FakeAsrClient:
+        def transcribe(self, audio_bytes: bytes) -> str:
+            return "   \n\t  "
+
+    fake_audio = b"\x01" * 32
+    fake_client = FakeAsrClient()
+
+    # Action
+    result = transcribe_audio(fake_audio, fake_client)
+
+    # Assert
+    assert isinstance(result, str)
+    assert result == ""

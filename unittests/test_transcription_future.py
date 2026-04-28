@@ -62,3 +62,24 @@ def test_transcribe_audio_returns_text_from_asr_output() -> None:
     assert fake_client.called_with == fake_audio
     assert isinstance(result, str)
     assert result == "hello from speech"
+
+
+def test_transcribe_audio_trims_outer_whitespace_from_asr_output() -> None:
+    # As a Discord participant, posted transcriptions are readable and don't include accidental surrounding whitespace.
+
+    # Arrange
+    transcribe_audio = _load_transcribe_audio()
+
+    class FakeAsrClient:
+        def transcribe(self, audio_bytes: bytes) -> str:
+            return "  hello from speech  "
+
+    fake_client = FakeAsrClient()
+    fake_audio = b"\x04\x05\x06\x07"
+
+    # Action
+    result = transcribe_audio(fake_audio, fake_client)
+
+    # Assert
+    assert isinstance(result, str)
+    assert result == "hello from speech"
