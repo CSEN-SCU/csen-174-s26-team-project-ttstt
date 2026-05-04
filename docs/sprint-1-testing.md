@@ -70,3 +70,4 @@ Below is one improvement pass for the call-order test, shifting it from strict i
 
 This version still enforces a critical order requirement, but it does so through an observable contract (no stream-before-join) rather than a tightly coupled call log.
 
+![Jolli AI](images/Jolli.png)
