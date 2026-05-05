@@ -1,7 +1,7 @@
 # Sprint 1 — CI/CD
 
 ## Merged PR with Passing CI check
-
+https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/actions/runs/25405659911
 
 ## Secrets handling
 
