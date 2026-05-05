@@ -49,7 +49,7 @@ def test_synthesize_text_applies_user_voice_preferences() -> None:
 
     fake_client = FakeTtsClient()
     text = "hello voice channel"
-    voice_prefs = {"voice": "calm", "speed": 1.1, "pitch": -1}
+    voice_prefs = {"voice": "calm", "speed": 1.1, "stability": 0.7}
 
     # Action
     audio = synthesize_text(text, voice_prefs, fake_client)

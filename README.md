@@ -22,7 +22,19 @@ The course-facing **product vision** and rationale are in **[`docs/product-visio
 | [`docs/`](docs) | Product vision, learning journal, and other course artifacts |
 | [`infra/`](infra) | Example **Docker Compose** for **Postgres** (for when the backend is implemented) — optional local dev database |
 
-**Not included yet:** Python packages for a Discord bot or API, CI workflows, or deployment—those will land under a future `apps/` (or similar) layout once the team moves from planning to implementation.
+## Implementation status (current)
+
+The repository now includes an initial product scaffolding under `apps/` for:
+- ASR transcription seam (`apps/bot/transcription.py`)
+- Discord voice seam (`apps/bot/discord_voice.py`)
+- ElevenLabs TTS integration and setting validation (`apps/bot/tts.py`)
+- Preference resolution + guild-default persistence abstractions (`apps/bot/preferences_store.py`)
+
+## Secret safety for public demos
+
+- Keep runtime keys in server environment variables only.
+- Use `.env.example` as a template and never commit real `.env` values.
+- Run `python scripts/check_no_secrets.py` before pushing to detect likely leaked keys in tracked files.
 
 ## For course staff
 
