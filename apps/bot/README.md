@@ -1,28 +1,40 @@
-# TTSTT Bot (Deployable Skeleton)
+# TTSTT Bot
 
-This is a deployable Discord bot baseline based on `prototypes/noelle`, scoped to
-voice connect/disconnect control only.
+A deployable Discord bot that bridges text and voice channels using
+**ElevenLabs** neural text-to-speech. The bot can join a voice channel and
+either read individual messages on demand (`/say`) or auto-read everything
+posted in the channel where you ran `/join` (`/relay on`).
 
-It does **not** run speech-to-text, text-to-speech, or webhook relay yet.
+Speech-to-text (the inbound side of TTSTT) is not wired into this skeleton
+yet; it lives behind the same `apps/bot/transcription.py` seam and will be
+filled in by a separate workstream.
 
-## Current Commands
+## Commands
 
-- `/join` - Join the command invoker's current voice channel.
-- `/leave` - Disconnect from voice in the current server.
-- `/status` - Report current voice connection status for the server.
+| Command | What it does |
+|---|---|
+| `/join` | Join the voice channel you are currently in and remember the text channel you ran `/join` from. |
+| `/leave` | Disconnect from voice in the current server. |
+| `/status` | Show the active voice channel, bound text channel, and auto-relay state. |
+| `/say message:<text>` | Synthesize `<text>` with ElevenLabs and play it in the voice channel. |
+| `/relay state:on\|off` | Toggle automatic reading of every message posted in the bound text channel. |
 
 ## Requirements
 
 - Python 3.11+
-- FFmpeg + Opus runtime available for Discord voice
-- Discord bot token with Guilds and Voice States intents enabled
+- FFmpeg + Opus runtime available for Discord voice playback
+- Discord bot token with **Guilds**, **Voice States**, and **Message Content** intents enabled
+- ElevenLabs account and API key (the free tier is enough for testing)
 
-## Local Setup
+## Local setup
 
-1. Create a virtual environment:
+1. Create and activate a virtual environment:
 
    ```bash
    python -m venv .venv
+   # Windows
+   .venv\Scripts\activate
+   # macOS / Linux
    source .venv/bin/activate
    ```
 
@@ -32,13 +44,15 @@ It does **not** run speech-to-text, text-to-speech, or webhook relay yet.
    pip install -r apps/bot/requirements.txt
    ```
 
-3. Configure environment:
+3. Copy the example environment file and fill in real values:
 
    ```bash
    cp apps/bot/.env.example .env
    ```
 
-   Then set `DISCORD_TOKEN` in `.env`.
+   At a minimum set `DISCORD_TOKEN`, `ELEVENLABS_API_KEY`, and
+   `ELEVENLABS_VOICE_ID`. The full list of variables (including optional
+   voice tuning and limits) is documented inline in `.env.example`.
 
 4. Run the bot:
 
@@ -46,22 +60,61 @@ It does **not** run speech-to-text, text-to-speech, or webhook relay yet.
    python -m apps.bot.main
    ```
 
-## Container Deployment
+## ElevenLabs setup
 
-Use this simple image for deployment targets that support Docker:
+1. Sign in at <https://elevenlabs.io>.
+2. From your profile menu, copy an API key into `ELEVENLABS_API_KEY`.
+3. Open **Voices**, pick a voice you like, click the row, and copy the
+   **Voice ID** into `ELEVENLABS_VOICE_ID`.
+4. Optional: set `ELEVENLABS_MODEL_ID` (e.g. `eleven_turbo_v2_5` for low
+   latency, `eleven_multilingual_v2` for higher quality) and the
+   stability / similarity / style tuning knobs. Leave blank to use the
+   provider defaults.
 
-```dockerfile
-FROM python:3.11-slim
+## Self-hosting with Docker
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+The repo ships an [`apps/bot/Dockerfile`](Dockerfile) that already installs
+`ffmpeg` and runs the bot module. To deploy on any host that supports
+Docker:
 
-WORKDIR /app
-COPY . /app
-RUN pip install --no-cache-dir -r apps/bot/requirements.txt
-
-CMD ["python", "-m", "apps.bot.main"]
+```bash
+docker build -t ttstt-bot -f apps/bot/Dockerfile .
+docker run --rm \
+  -e DISCORD_TOKEN=... \
+  -e ELEVENLABS_API_KEY=... \
+  -e ELEVENLABS_VOICE_ID=... \
+  ttstt-bot
 ```
 
-Set `DISCORD_TOKEN` in your runtime environment/secrets manager.
+Any platform that injects environment variables (Fly.io, Railway, Render,
+a VPS via `systemd`, etc.) works the same way - the bot only reads from
+`os.getenv`, never from baked-in config.
+
+**Never commit your real `.env` file.** The repo's `.gitignore` already
+excludes `.env`, `.env.local`, and `.env.*.local`; `apps/bot/.env.example`
+is the only file checked in and is safe to read.
+
+## Discord application configuration
+
+In the [Discord Developer Portal](https://discord.com/developers/applications)
+enable these gateway intents on your bot:
+
+- Guilds
+- Voice States
+- Message Content (required for `/relay`)
+
+Invite the bot using scopes `bot` and `applications.commands` and grant at
+least these permissions in your target channels:
+
+- Voice channel: **Connect**, **Speak**, **View Channel**, **Use Voice Activity**
+- Text channel: **Send Messages**, **View Channel**, **Read Message History**
+
+## Usage walk-through
+
+1. Join a voice channel in your server.
+2. In the text channel you want the bot bound to, run `/join`.
+3. Run `/say message: hello world` to hear ElevenLabs read it back.
+4. Run `/relay state: on` to have the bot read every subsequent message in
+   that text channel. Run `/relay state: off` to stop. Bot messages and
+   empty messages are ignored automatically.
+5. Run `/leave` when you are done.
