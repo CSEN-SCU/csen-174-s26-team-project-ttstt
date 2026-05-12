@@ -1,5 +1,7 @@
 # TTSTT Discord TTS Prototype — Diego
 
+> Prototype note: this folder is a historical prototype. The maintained consolidated bot lives in `apps/bot`.
+
 This prototype is now Discord-first:
 
 - The web app is an intro screen only.

@@ -1,6 +1,6 @@
 # Infrastructure
 
-Optional **Postgres** for future backend development (no application code in-repo yet).
+Local **Postgres** for the deployable Discord bot in `apps/bot`.
 
 ```bash
 cd infra
@@ -11,4 +11,10 @@ docker compose up -d
 
 Stop: `docker compose down` (add `-v` to remove the Postgres volume).
 
-When implemented, the API and Discord bot will run outside this compose file; voice traffic uses **Discord’s** infrastructure.
+Initialize bot schema after Postgres starts:
+
+```bash
+cat ../apps/bot/sql/voice_preferences.sql | docker compose exec -T postgres psql -U app -d app
+```
+
+The bot itself runs outside this compose file (`python -m apps.bot.main`); voice traffic still uses Discord infrastructure.

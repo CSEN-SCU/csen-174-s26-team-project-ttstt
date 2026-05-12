@@ -1,5 +1,7 @@
 # Discord Voice-to-Text Relay (Deepgram)
 
+> Prototype note: this folder is a historical prototype. The maintained consolidated bot lives in `apps/bot`.
+
 This bot joins a live Discord voice channel, transcribes spoken audio with Deepgram, and posts transcript text into the same text channel where `/join` was run. Transcript messages are sent by webhook using each speaker's display name and avatar.
 
 ## Features

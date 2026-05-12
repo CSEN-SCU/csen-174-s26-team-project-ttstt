@@ -1,31 +1,49 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/NfqHRKdw)
 # TTSTT (Text To Speech To Text)
 
 By: Noelle Evanich, Diego Silva, Dana Steinke
 
-**CSEN 174 — planning / design phase.** This repository documents the **intended** product; **there is no application code here yet** (the `apps/` tree has been removed until implementation begins).
+TTSTT is a Discord-first accessibility project that bridges text and voice:
 
-## Intended product (summary)
+- **Speech -> Text:** transcribe voice-channel speech into readable text.
+- **Text -> Speech:** read selected users' text messages aloud in voice channels.
 
-A **Discord bot** plus a **backend service** so participants can:
+## Current status
 
-- Turn **voice** into **text** in a server (via **automatic speech recognition**, e.g. Whisper-class APIs).
-- Hear **text chat** read aloud in **voice channels** (**neural text-to-speech**, e.g. Piper-style models from Hugging Face), with per-user voice and prosody settings.
-- Apply optional **server-side audio post-processing** (e.g. ffmpeg: pitch/tempo, default loudness normalization).
+This repository contains a working deployable Discord bot at [`apps/bot`](apps/bot):
 
-The course-facing **product vision** and rationale are in **[`docs/product-vision.md`](docs/product-vision.md)**.
+- Voice control commands: `/join`, `/leave`, `/status`
+- TTS listener controls: `/tts_listen_user`, `/tts_stop_listening_user`, `/tts_stop_all_listeners`
+- Per-user voice preferences (Postgres-backed): `/tts_voice_set`, `/tts_voice_show`, `/tts_voice_reset`
 
-## What is in this repo right now
+See [`apps/bot/README.md`](apps/bot/README.md) for setup and usage.
 
-| Location | Contents |
-|----------|----------|
-| [`docs/`](docs) | Product vision, learning journal, and other course artifacts |
-| [`infra/`](infra) | Example **Docker Compose** for **Postgres** (for when the backend is implemented) — optional local dev database |
+## Repository layout
 
-**Not included yet:** Python packages for a Discord bot or API, CI workflows, or deployment—those will land under a future `apps/` (or similar) layout once the team moves from planning to implementation.
+| Location | Purpose |
+|---|---|
+| [`apps/bot`](apps/bot) | Consolidated deployable Discord bot implementation |
+| [`infra`](infra) | Local Postgres Docker Compose for bot development |
+| [`docs`](docs) | Product vision, architecture notes, and course artifacts |
+| [`prototypes`](prototypes) | Earlier member prototypes and experiments |
 
-## For course staff
+## Quick start (bot)
 
-- **Scope:** Software engineering process (vision, architecture, testing, and deployment **to be documented** as the quarter progresses).  
-- **AI:** The design centers on **speech recognition** and **speech synthesis** as the core capabilities (vendor-agnostic in documentation).  
-- **Status:** **Pre-implementation** — use `docs/` and team process artifacts to assess planning; do not expect a runnable demo from this repository state alone.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r apps/bot/requirements.txt
+python -m apps.bot.main
+```
+
+Required env vars in `.env`:
+
+- `DISCORD_TOKEN`
+- `DEEPGRAM_API_KEY`
+- `DATABASE_URL`
+- Optional: `FFMPEG_EXECUTABLE` (defaults to `ffmpeg`)
+
+Before first run, create the Postgres table:
+
+```bash
+cat apps/bot/sql/voice_preferences.sql | docker compose -f infra/docker-compose.yml exec -T postgres psql -U app -d app
+```

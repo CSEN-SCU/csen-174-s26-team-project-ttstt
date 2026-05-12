@@ -1,4 +1,4 @@
-"""Deployable Discord bot entrypoint (voice join/leave only)."""
+"""Deployable Discord bot entrypoint with message-listener TTS support."""
 
 from __future__ import annotations
 
@@ -11,31 +11,127 @@ from discord import app_commands
 from discord.ext import commands, voice_recv
 from dotenv import load_dotenv
 
+from apps.bot.db import create_postgres_pool
+from apps.bot.playback import PlaybackCoordinator
 from apps.bot.session_registry import SessionRegistry
+from apps.bot.tts import DeepgramTtsClient, TtsSynthesisError, chunk_text_for_tts, synthesize_text
+from apps.bot.tts_listener_registry import TtsListenerRegistry
+from apps.bot.voice_preferences import PostgresVoicePreferencesRepository, VoicePreferences
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger("ttstt-bot")
 
+MAX_TTS_CHARS = 300
+
+
+def _should_enqueue_message(
+    *,
+    control_channel_id: int | None,
+    message_channel_id: int,
+    author_is_bot: bool,
+    guild_present: bool,
+    is_listened_user: bool,
+) -> bool:
+    if author_is_bot or not guild_present:
+        return False
+    if control_channel_id is None or message_channel_id != control_channel_id:
+        return False
+    return is_listened_user
+
 
 class RelayBot(commands.Bot):
-    def __init__(self, discord_token: str) -> None:
+    def __init__(
+        self,
+        discord_token: str,
+        tts_client: DeepgramTtsClient,
+        voice_preferences: PostgresVoicePreferencesRepository,
+        db_pool: object,
+        ffmpeg_executable: str,
+    ) -> None:
         intents = discord.Intents.default()
         intents.guilds = True
         intents.voice_states = True
+        intents.message_content = True
 
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.discord_token = discord_token
+        self.tts_client = tts_client
+        self.voice_preferences = voice_preferences
+        self.db_pool = db_pool
         self.sessions = SessionRegistry()
+        self.listeners = TtsListenerRegistry()
+        self.playback = PlaybackCoordinator(bot=self, ffmpeg_executable=ffmpeg_executable)
 
     async def setup_hook(self) -> None:
         self.tree.add_command(join_voice)
         self.tree.add_command(leave_voice)
         self.tree.add_command(bot_status)
+        self.tree.add_command(tts_listen_user)
+        self.tree.add_command(tts_stop_listening_user)
+        self.tree.add_command(tts_stop_all_listeners)
+        self.tree.add_command(tts_voice_set)
+        self.tree.add_command(tts_voice_show)
+        self.tree.add_command(tts_voice_reset)
         await self.tree.sync()
 
     async def on_ready(self) -> None:
         if self.user is not None:
             LOGGER.info("Bot ready as %s", self.user)
+
+    async def on_message(self, message: discord.Message) -> None:
+        if message.guild is None:
+            return
+        if not isinstance(message.author, discord.Member):
+            return
+
+        control_channel_id = self.sessions.get(message.guild.id)
+        is_listened_user = self.listeners.contains(guild_id=message.guild.id, user_id=message.author.id)
+        if not _should_enqueue_message(
+            control_channel_id=control_channel_id,
+            message_channel_id=message.channel.id,
+            author_is_bot=message.author.bot,
+            guild_present=message.guild is not None,
+            is_listened_user=is_listened_user,
+        ):
+            return
+
+        voice_client = message.guild.voice_client
+        if voice_client is None or not voice_client.is_connected():
+            return
+
+        text = message.clean_content.strip()
+        if not text:
+            return
+
+        prefs = await self.voice_preferences.get(guild_id=message.guild.id, user_id=message.author.id)
+        chunks = chunk_text_for_tts(text=text, max_chars=MAX_TTS_CHARS)
+        for chunk in chunks:
+            try:
+                audio_bytes = await asyncio.to_thread(
+                    synthesize_text,
+                    chunk,
+                    prefs.to_provider_dict(),
+                    self.tts_client,
+                )
+            except TtsSynthesisError as exc:
+                LOGGER.warning("TTS failed for guild=%s user=%s: %s", message.guild.id, message.author.id, exc)
+                continue
+
+            self.playback.enqueue(
+                guild_id=message.guild.id,
+                audio_bytes=audio_bytes,
+                source_user_id=message.author.id,
+                source_message_id=message.id,
+            )
+
+    async def close(self) -> None:
+        await self.playback.shutdown()
+        maybe_close = getattr(self.db_pool, "close", None)
+        if callable(maybe_close):
+            close_result = maybe_close()
+            if asyncio.iscoroutine(close_result):
+                await close_result
+        await super().close()
 
 
 async def _ensure_voice_recv_client(
@@ -115,6 +211,8 @@ async def leave_voice(interaction: discord.Interaction) -> None:
         return
 
     bot.sessions.remove(interaction.guild.id)
+    bot.listeners.clear(interaction.guild.id)
+    bot.playback.clear_guild(interaction.guild.id)
     await voice_client.disconnect(force=True)
     await interaction.response.send_message("Disconnected from voice.")
 
@@ -138,8 +236,172 @@ async def bot_status(interaction: discord.Interaction) -> None:
     text_channel = bot.get_channel(text_channel_id)
     text_ref = text_channel.mention if isinstance(text_channel, discord.TextChannel) else f"<#{text_channel_id}>"
     voice_ref = voice_client.channel.mention if voice_client.channel else "unknown voice channel"
+    listener_count = len(bot.listeners.list_users(interaction.guild.id))
     await interaction.response.send_message(
-        f"Connected in {voice_ref}; control channel is {text_ref}.",
+        f"Connected in {voice_ref}; control channel is {text_ref}; listening to {listener_count} user(s).",
+        ephemeral=True,
+    )
+
+
+@app_commands.command(name="tts_listen_user", description="Start reading messages from this user in voice.")
+@app_commands.describe(user="User whose text messages should be read aloud")
+async def tts_listen_user(interaction: discord.Interaction, user: discord.Member) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None or not isinstance(interaction.channel, discord.TextChannel):
+        await interaction.response.send_message("Use this command in a guild text channel.", ephemeral=True)
+        return
+
+    voice_client = interaction.guild.voice_client
+    if voice_client is None or not voice_client.is_connected():
+        await interaction.response.send_message("Run `/join` first so I am connected to voice.", ephemeral=True)
+        return
+
+    control_channel_id = bot.sessions.get(interaction.guild.id)
+    if control_channel_id != interaction.channel.id:
+        await interaction.response.send_message(
+            "Use this command in the current control text channel (run `/join` here if needed).",
+            ephemeral=True,
+        )
+        return
+
+    bot.listeners.add(guild_id=interaction.guild.id, user_id=user.id)
+    await interaction.response.send_message(f"Now listening to {user.mention} in this channel.", ephemeral=True)
+
+
+@app_commands.command(name="tts_stop_listening_user", description="Stop reading messages from this user.")
+@app_commands.describe(user="User to remove from TTS listening")
+async def tts_stop_listening_user(interaction: discord.Interaction, user: discord.Member) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None:
+        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+        return
+
+    removed = bot.listeners.remove(guild_id=interaction.guild.id, user_id=user.id)
+    if not removed:
+        await interaction.response.send_message(f"{user.mention} is not currently being listened to.", ephemeral=True)
+        return
+    await interaction.response.send_message(f"Stopped listening to {user.mention}.", ephemeral=True)
+
+
+@app_commands.command(name="tts_stop_all_listeners", description="Stop reading messages from all users in this server.")
+async def tts_stop_all_listeners(interaction: discord.Interaction) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None:
+        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+        return
+
+    cleared = bot.listeners.clear(interaction.guild.id)
+    bot.playback.clear_guild(interaction.guild.id)
+    await interaction.response.send_message(
+        f"Stopped listening to {len(cleared)} user(s) in this server.",
+        ephemeral=True,
+    )
+
+
+def _merge_preferences(
+    existing: VoicePreferences,
+    voice: str | None,
+    speed: float | None,
+    pitch: float | None,
+    style: str | None,
+) -> VoicePreferences:
+    return VoicePreferences(
+        voice=voice if voice is not None else existing.voice,
+        speed=speed if speed is not None else existing.speed,
+        pitch=pitch if pitch is not None else existing.pitch,
+        style=style if style is not None else existing.style,
+    )
+
+
+@app_commands.command(name="tts_voice_set", description="Set your TTS voice preferences in this server.")
+@app_commands.describe(
+    voice="Deepgram voice/model id, e.g. aura-2-thalia-en",
+    speed="Speech speed between 0.5 and 2.0",
+    pitch="Pitch between -20 and 20",
+    style="Optional style/tone label",
+)
+async def tts_voice_set(
+    interaction: discord.Interaction,
+    voice: str | None = None,
+    speed: app_commands.Range[float, 0.5, 2.0] | None = None,
+    pitch: app_commands.Range[float, -20.0, 20.0] | None = None,
+    style: str | None = None,
+) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+        return
+
+    current = await bot.voice_preferences.get(guild_id=interaction.guild.id, user_id=interaction.user.id)
+    merged = _merge_preferences(current, voice=voice, speed=speed, pitch=pitch, style=style)
+    try:
+        saved = await bot.voice_preferences.upsert(
+            guild_id=interaction.guild.id,
+            user_id=interaction.user.id,
+            prefs=merged,
+        )
+    except Exception as exc:
+        LOGGER.warning("Failed to persist TTS prefs: %r", exc)
+        await interaction.response.send_message(
+            "Could not save voice settings right now. Please try again.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.send_message(
+        f"Saved voice settings: voice=`{saved.voice}`, speed={saved.speed}, pitch={saved.pitch}, "
+        f"style={saved.style or 'default'}.",
+        ephemeral=True,
+    )
+
+
+@app_commands.command(name="tts_voice_show", description="Show your TTS voice preferences in this server.")
+async def tts_voice_show(interaction: discord.Interaction) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+        return
+
+    prefs = await bot.voice_preferences.get(guild_id=interaction.guild.id, user_id=interaction.user.id)
+    await interaction.response.send_message(
+        f"Your voice settings: voice=`{prefs.voice}`, speed={prefs.speed}, pitch={prefs.pitch}, "
+        f"style={prefs.style or 'default'}.",
+        ephemeral=True,
+    )
+
+
+@app_commands.command(name="tts_voice_reset", description="Reset your TTS voice preferences in this server.")
+async def tts_voice_reset(interaction: discord.Interaction) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+        return
+
+    try:
+        prefs = await bot.voice_preferences.reset(guild_id=interaction.guild.id, user_id=interaction.user.id)
+    except Exception as exc:
+        LOGGER.warning("Failed to reset TTS prefs: %r", exc)
+        await interaction.response.send_message(
+            "Could not reset voice settings right now. Please try again.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.send_message(
+        f"Reset to defaults: voice=`{prefs.voice}`, speed={prefs.speed}, pitch={prefs.pitch}, "
+        f"style={prefs.style or 'default'}.",
         ephemeral=True,
     )
 
@@ -147,11 +409,34 @@ async def bot_status(interaction: discord.Interaction) -> None:
 async def main() -> None:
     load_dotenv()
     discord_token = os.getenv("DISCORD_TOKEN")
+    deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+    database_url = os.getenv("DATABASE_URL")
+    ffmpeg_executable = os.getenv("FFMPEG_EXECUTABLE", "ffmpeg")
     if not discord_token:
         raise RuntimeError("DISCORD_TOKEN must be set in .env.")
+    if not deepgram_api_key:
+        raise RuntimeError("DEEPGRAM_API_KEY must be set in .env.")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL must be set in .env.")
 
-    bot = RelayBot(discord_token=discord_token)
-    await bot.start(bot.discord_token)
+    db_pool = await create_postgres_pool(database_url=database_url)
+    bot = RelayBot(
+        discord_token=discord_token,
+        tts_client=DeepgramTtsClient(api_key=deepgram_api_key),
+        voice_preferences=PostgresVoicePreferencesRepository(conn=db_pool),
+        db_pool=db_pool,
+        ffmpeg_executable=ffmpeg_executable,
+    )
+    try:
+        await bot.start(bot.discord_token)
+    except discord.errors.PrivilegedIntentsRequired as exc:
+        raise RuntimeError(
+            "Discord privileged intent is disabled. Enable 'Message Content Intent' in the Discord Developer Portal "
+            "for this application, then restart the bot."
+        ) from exc
+    finally:
+        if not bot.is_closed():
+            await bot.close()
 
 
 if __name__ == "__main__":

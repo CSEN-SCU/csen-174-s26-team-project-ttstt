@@ -1,5 +1,7 @@
 # TTSTT (Text To Speech To Text)
 
+> Prototype note: this folder is a historical prototype snapshot and is not the canonical runtime entrypoint. Use `apps/bot` for the current deployable bot.
+
 By: Noelle Evanich, Diego Silva, Dana Steinke
 
 **CSEN 174 — planning / design phase.** This repository documents the **intended** product. A small **STT prototype** lives under [`apps/cli/`](apps/cli/) to try Whisper on live microphone input (see that folder’s `requirements.txt`).
