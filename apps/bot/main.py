@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from apps.bot.db import create_postgres_pool
 from apps.bot.playback import PlaybackCoordinator
 from apps.bot.session_registry import SessionRegistry
+from apps.bot.stt import SttListenerRegistry, TranscriptionSink
+from apps.bot.transcription import DeepgramAsrClient
 from apps.bot.tts import DeepgramTtsClient, TtsSynthesisError, chunk_text_for_tts, synthesize_text
 from apps.bot.tts_listener_registry import TtsListenerRegistry
 from apps.bot.voice_preferences import PostgresVoicePreferencesRepository, VoicePreferences
@@ -44,6 +46,7 @@ class RelayBot(commands.Bot):
         self,
         discord_token: str,
         tts_client: DeepgramTtsClient,
+        asr_client: DeepgramAsrClient,
         voice_preferences: PostgresVoicePreferencesRepository,
         db_pool: object,
         ffmpeg_executable: str,
@@ -56,11 +59,14 @@ class RelayBot(commands.Bot):
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.discord_token = discord_token
         self.tts_client = tts_client
+        self.asr_client = asr_client
         self.voice_preferences = voice_preferences
         self.db_pool = db_pool
         self.sessions = SessionRegistry()
         self.listeners = TtsListenerRegistry()
+        self.stt_listeners = SttListenerRegistry()
         self.playback = PlaybackCoordinator(bot=self, ffmpeg_executable=ffmpeg_executable)
+        self._stt_sinks: dict[int, TranscriptionSink] = {}
 
     async def setup_hook(self) -> None:
         self.tree.add_command(join_voice)
@@ -72,6 +78,9 @@ class RelayBot(commands.Bot):
         self.tree.add_command(tts_voice_set)
         self.tree.add_command(tts_voice_show)
         self.tree.add_command(tts_voice_reset)
+        self.tree.add_command(stt_listen_user)
+        self.tree.add_command(stt_stop_listening_user)
+        self.tree.add_command(stt_stop_all_listeners)
         await self.tree.sync()
 
     async def on_ready(self) -> None:
@@ -190,6 +199,17 @@ async def join_voice(interaction: discord.Interaction) -> None:
         return
 
     bot.sessions.upsert(interaction.guild.id, interaction.channel.id)
+
+    if not voice_client.is_listening():
+        sink = TranscriptionSink(
+            asr_client=bot.asr_client,
+            listeners=bot.stt_listeners,
+            guild_id=interaction.guild.id,
+            text_channel_id=interaction.channel.id,
+        )
+        bot._stt_sinks[interaction.guild.id] = sink
+        voice_client.listen(sink)
+
     await interaction.response.send_message(
         f"Connected to {voice_client.channel.mention if voice_client.channel else 'voice'} "
         f"from {interaction.channel.mention}.",
@@ -212,7 +232,11 @@ async def leave_voice(interaction: discord.Interaction) -> None:
 
     bot.sessions.remove(interaction.guild.id)
     bot.listeners.clear(interaction.guild.id)
+    bot.stt_listeners.clear(interaction.guild.id)
+    bot._stt_sinks.pop(interaction.guild.id, None)
     bot.playback.clear_guild(interaction.guild.id)
+    if isinstance(voice_client, voice_recv.VoiceRecvClient) and voice_client.is_listening():
+        voice_client.stop_listening()
     await voice_client.disconnect(force=True)
     await interaction.response.send_message("Disconnected from voice.")
 
@@ -406,6 +430,61 @@ async def tts_voice_reset(interaction: discord.Interaction) -> None:
     )
 
 
+@app_commands.command(name="stt_listen_user", description="Start transcribing this user's voice to text.")
+@app_commands.describe(user="User whose spoken words should appear in the text channel")
+async def stt_listen_user(interaction: discord.Interaction, user: discord.Member) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None or not isinstance(interaction.channel, discord.TextChannel):
+        await interaction.response.send_message("Use this command in a guild text channel.", ephemeral=True)
+        return
+
+    voice_client = interaction.guild.voice_client
+    if voice_client is None or not voice_client.is_connected():
+        await interaction.response.send_message("Run `/join` first so I am connected to voice.", ephemeral=True)
+        return
+
+    bot.stt_listeners.add(guild_id=interaction.guild.id, user_id=user.id)
+    await interaction.response.send_message(
+        f"Now transcribing {user.mention}'s voice to text.", ephemeral=True
+    )
+
+
+@app_commands.command(name="stt_stop_listening_user", description="Stop transcribing this user's voice.")
+@app_commands.describe(user="User to remove from STT transcription")
+async def stt_stop_listening_user(interaction: discord.Interaction, user: discord.Member) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None:
+        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+        return
+
+    removed = bot.stt_listeners.remove(guild_id=interaction.guild.id, user_id=user.id)
+    if not removed:
+        await interaction.response.send_message(
+            f"{user.mention} is not currently being transcribed.", ephemeral=True
+        )
+        return
+    await interaction.response.send_message(f"Stopped transcribing {user.mention}.", ephemeral=True)
+
+
+@app_commands.command(name="stt_stop_all_listeners", description="Stop transcribing all users' voices in this server.")
+async def stt_stop_all_listeners(interaction: discord.Interaction) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None:
+        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+        return
+
+    cleared = bot.stt_listeners.clear(interaction.guild.id)
+    await interaction.response.send_message(
+        f"Stopped transcribing {len(cleared)} user(s) in this server.", ephemeral=True
+    )
+
+
 async def main() -> None:
     load_dotenv()
     discord_token = os.getenv("DISCORD_TOKEN")
@@ -423,6 +502,7 @@ async def main() -> None:
     bot = RelayBot(
         discord_token=discord_token,
         tts_client=DeepgramTtsClient(api_key=deepgram_api_key),
+        asr_client=DeepgramAsrClient(api_key=deepgram_api_key),
         voice_preferences=PostgresVoicePreferencesRepository(conn=db_pool),
         db_pool=db_pool,
         ffmpeg_executable=ffmpeg_executable,
