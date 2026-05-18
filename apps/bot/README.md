@@ -50,6 +50,14 @@ commanded text-to-speech listener support.
    - `DEEPGRAM_API_KEY`
    - `DATABASE_URL`
    - Optional: `FFMPEG_EXECUTABLE` (defaults to `ffmpeg`)
+   - Optional: `OPENAI_API_KEY` (enables OpenAI Moderation API checks on STT/TTS text)
+
+## Privacy and content safety
+
+- `/join` warns that STT and TTS features transcribe or read aloud user content in the server.
+- **STT:** Transcripts matching self-harm, medical, or minor-disclosure patterns are not posted publicly; the speaker gets a private DM (with a 988 crisis line for self-harm matches). `http://` and `https://` URLs are replaced with `[link removed]` in public posts.
+- **TTS:** Listened messages with sensitive content or links are not synthesized or played in voice.
+- Set `OPENAI_API_KEY` for additional hate/harassment/violence screening via OpenAI's Moderation API.
 
 4. Run the bot:
 
