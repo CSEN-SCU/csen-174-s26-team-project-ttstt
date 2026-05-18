@@ -12,6 +12,11 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ext import voice_recv
 
+from apps.bot.content_moderation import (
+    Disposition,
+    format_sensitive_dm,
+    moderate_for_transcript,
+)
 from apps.bot.transcription import AsrTranscriptionError, transcribe_audio
 
 if TYPE_CHECKING:
@@ -97,12 +102,14 @@ class TranscriptionSink(voice_recv.AudioSink):
         listeners: SttListenerRegistry,
         guild_id: int,
         text_channel_id: int,
+        openai_api_key: str | None = None,
     ) -> None:
         super().__init__()
         self._asr_client = asr_client
         self._listeners = listeners
         self._guild_id = guild_id
         self._text_channel_id = text_channel_id
+        self._openai_api_key = openai_api_key
         self._buffers: dict[int, _UserBuffer] = {}
 
     def wants_opus(self) -> bool:
@@ -145,11 +152,31 @@ class TranscriptionSink(voice_recv.AudioSink):
         if not text:
             return
 
+        outcome = moderate_for_transcript(text, openai_api_key=self._openai_api_key)
+        if outcome.disposition is Disposition.BLOCKED:
+            LOGGER.info("Suppressed transcript for user=%s (%s)", user.id, outcome.log_reason)
+            return
+
+        if outcome.disposition is Disposition.PRIVATE_DM:
+            dm_body = outcome.dm_body or text
+            try:
+                await user.send(
+                    format_sensitive_dm(dm_body, outcome.crisis_footer),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except discord.Forbidden:
+                LOGGER.warning("Sensitive transcript for user=%s could not be delivered via DM", user.id)
+            return
+
         channel = self.client.get_channel(self._text_channel_id)  # type: ignore[union-attr]
         if not isinstance(channel, discord.TextChannel):
             return
 
-        await channel.send(f"**{user.display_name}**: {text}")
+        public_text = outcome.public_text or text
+        await channel.send(
+            f"**{user.display_name}**: {public_text}",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     def cleanup(self) -> None:
         self._buffers.clear()

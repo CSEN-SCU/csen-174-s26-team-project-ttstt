@@ -11,6 +11,7 @@ from discord import app_commands
 from discord.ext import commands, voice_recv
 from dotenv import load_dotenv
 
+from apps.bot.content_moderation import Disposition, moderate_for_tts
 from apps.bot.db import create_postgres_pool
 from apps.bot.playback import PlaybackCoordinator
 from apps.bot.session_registry import SessionRegistry
@@ -50,6 +51,7 @@ class RelayBot(commands.Bot):
         voice_preferences: PostgresVoicePreferencesRepository,
         db_pool: object,
         ffmpeg_executable: str,
+        openai_api_key: str | None = None,
     ) -> None:
         intents = discord.Intents.default()
         intents.guilds = True
@@ -66,6 +68,7 @@ class RelayBot(commands.Bot):
         self.listeners = TtsListenerRegistry()
         self.stt_listeners = SttListenerRegistry()
         self.playback = PlaybackCoordinator(bot=self, ffmpeg_executable=ffmpeg_executable)
+        self.openai_api_key = openai_api_key
         self._stt_sinks: dict[int, TranscriptionSink] = {}
 
     async def setup_hook(self) -> None:
@@ -111,6 +114,18 @@ class RelayBot(commands.Bot):
         text = message.clean_content.strip()
         if not text:
             return
+
+        moderation = moderate_for_tts(text, openai_api_key=self.openai_api_key)
+        if moderation.disposition is Disposition.BLOCKED:
+            LOGGER.info(
+                "Suppressed TTS for guild=%s user=%s (%s)",
+                message.guild.id,
+                message.author.id,
+                moderation.log_reason,
+            )
+            return
+
+        text = moderation.public_text or text
 
         prefs = await self.voice_preferences.get(guild_id=message.guild.id, user_id=message.author.id)
         chunks = chunk_text_for_tts(text=text, max_chars=MAX_TTS_CHARS)
@@ -206,13 +221,18 @@ async def join_voice(interaction: discord.Interaction) -> None:
             listeners=bot.stt_listeners,
             guild_id=interaction.guild.id,
             text_channel_id=interaction.channel.id,
+            openai_api_key=bot.openai_api_key,
         )
         bot._stt_sinks[interaction.guild.id] = sink
         voice_client.listen(sink)
 
     await interaction.response.send_message(
         f"Connected to {voice_client.channel.mention if voice_client.channel else 'voice'} "
-        f"from {interaction.channel.mention}.",
+        f"from {interaction.channel.mention}.\n\n"
+        "**Privacy:** Voice from users you add with `/stt_listen_user` may be transcribed into this "
+        "channel. Sensitive speech may be sent to the speaker by DM instead. Links in speech are "
+        "redacted in public posts. Text from users you add with `/tts_listen_user` may be read aloud "
+        "in voice after content safety checks."
     )
 
 
@@ -506,6 +526,7 @@ async def main() -> None:
         voice_preferences=PostgresVoicePreferencesRepository(conn=db_pool),
         db_pool=db_pool,
         ffmpeg_executable=ffmpeg_executable,
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
     )
     try:
         await bot.start(bot.discord_token)
