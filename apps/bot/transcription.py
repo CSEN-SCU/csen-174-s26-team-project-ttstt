@@ -112,6 +112,33 @@ class DeepgramAsrClient:
 
         transcript, per_channel = _extract_transcript_from_response(response)
         channel_count = len(getattr(getattr(response, "results", None), "channels", None) or [])
+
+        # Build detailed per-channel diagnostic data
+        raw_channels = getattr(getattr(response, "results", None), "channels", None) or []
+        channel_details: list[dict[str, object]] = []
+        for ch_idx, channel in enumerate(raw_channels):
+            alts = getattr(channel, "alternatives", None) or []
+            alt_details: list[dict[str, object]] = []
+            for alt in alts:
+                words = getattr(alt, "words", None) or []
+                word_list = [
+                    {
+                        "word": getattr(w, "word", None),
+                        "confidence": getattr(w, "confidence", None),
+                        "start": getattr(w, "start", None),
+                        "end": getattr(w, "end", None),
+                    }
+                    for w in words[:10]  # cap at 10 words to keep log manageable
+                ]
+                alt_details.append({
+                    "transcript": getattr(alt, "transcript", ""),
+                    "confidence": getattr(alt, "confidence", None),
+                    "words_count": len(words),
+                    "words_sample": word_list,
+                })
+            channel_details.append({"ch_idx": ch_idx, "alternatives": alt_details})
+
+        metadata = getattr(response, "metadata", None)
         # #region agent log
         _agent_log(
             hypothesis_id="H2" if transcript else "H5",
@@ -121,6 +148,10 @@ class DeepgramAsrClient:
                 "transcript_len": len(transcript),
                 "channel_count": channel_count,
                 "per_channel_lens": [len(part) for part in per_channel],
+                "channel_details": channel_details,
+                "request_id": getattr(metadata, "request_id", None),
+                "duration": getattr(metadata, "duration", None),
+                "channels_meta": getattr(metadata, "channels", None),
             },
         )
         # #endregion

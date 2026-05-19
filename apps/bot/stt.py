@@ -79,6 +79,22 @@ def _stereo_to_mono(pcm: bytes) -> bytes:
     return audioop.tomono(pcm, _SAMPLE_WIDTH, 1.0, 0.0)
 
 
+_NORMALIZE_TARGET_PEAK = 24000  # ~73% of 32767 — leaves headroom without over-compressing
+
+
+def _normalize_pcm(pcm: bytes) -> bytes:
+    """Scale PCM down to _NORMALIZE_TARGET_PEAK if the peak exceeds it.
+
+    Does not restore already-clipped audio, but ensures Deepgram receives audio at a
+    consistent amplitude and avoids any internal AGC issues from very loud input.
+    """
+    peak = audioop.max(pcm, _SAMPLE_WIDTH)
+    if peak > _NORMALIZE_TARGET_PEAK:
+        factor = _NORMALIZE_TARGET_PEAK / peak
+        return audioop.mul(pcm, _SAMPLE_WIDTH, factor)
+    return pcm
+
+
 def _wrap_pcm_as_wav(pcm: bytes, *, channels: int = _ASR_CHANNELS) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
@@ -197,14 +213,30 @@ class TranscriptionSink(voice_recv.AudioSink):
 
         pcm_peak = audioop.max(pcm, _SAMPLE_WIDTH)
         mono_pcm = _stereo_to_mono(pcm)
+        if pcm_peak >= 32700:
+            LOGGER.warning(
+                "STT audio is clipping (peak=%s) for user=%s — "
+                "lower microphone gain in Discord Settings → Voice & Video → Input Sensitivity",
+                pcm_peak,
+                user.id,
+            )
+        mono_pcm = _normalize_pcm(mono_pcm)
         wav = _wrap_pcm_as_wav(mono_pcm)
         _save_debug_wav(guild_id=self._guild_id, user_id=user.id, wav=wav, pcm_peak=pcm_peak)
+        mono_peak = audioop.max(mono_pcm, _SAMPLE_WIDTH)
         # #region agent log
         _agent_log(
             hypothesis_id="H7",
             location="stt.py:_flush_after_silence:flush",
             message="Flushing utterance to Deepgram",
-            data={"user_id": user.id, "pcm_bytes": len(pcm), "wav_bytes": len(wav), "pcm_peak": pcm_peak},
+            data={
+                "user_id": user.id,
+                "pcm_bytes": len(pcm),
+                "wav_bytes": len(wav),
+                "pcm_peak": pcm_peak,
+                "mono_peak_after_norm": mono_peak,
+                "was_clipping": pcm_peak >= 32700,
+            },
         )
         # #endregion
         try:
