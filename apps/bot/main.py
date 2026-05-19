@@ -27,6 +27,29 @@ LOGGER = logging.getLogger("ttstt-bot")
 MAX_TTS_CHARS = 300
 
 
+def _install_opus_decode_guard() -> None:
+    """Prevent corrupted Opus packets from crashing voice-recv router threads."""
+
+    if getattr(discord.opus.Decoder.decode, "_relay_guard_installed", False):
+        return
+
+    original_decode = discord.opus.Decoder.decode
+
+    def guarded_decode(self: discord.opus.Decoder, data: bytes | None, *, fec: bool = False) -> bytes:
+        try:
+            return original_decode(self, data, fec=fec)
+        except discord.opus.OpusError:
+            # Swallow any Opus decode error and request PLC (packet loss concealment)
+            # so the voice-recv router thread keeps running instead of crashing.
+            try:
+                return original_decode(self, None, fec=False)
+            except Exception:
+                return b""
+
+    setattr(guarded_decode, "_relay_guard_installed", True)
+    discord.opus.Decoder.decode = guarded_decode  # type: ignore[assignment]
+
+
 def _should_enqueue_message(
     *,
     control_channel_id: int | None,
@@ -127,7 +150,16 @@ class RelayBot(commands.Bot):
 
         text = moderation.public_text or text
 
-        prefs = await self.voice_preferences.get(guild_id=message.guild.id, user_id=message.author.id)
+        try:
+            prefs = await self.voice_preferences.get(guild_id=message.guild.id, user_id=message.author.id)
+        except Exception as exc:
+            LOGGER.exception(
+                "Voice preferences lookup failed for guild=%s user=%s",
+                message.guild.id,
+                message.author.id,
+            )
+            return
+
         chunks = chunk_text_for_tts(text=text, max_chars=MAX_TTS_CHARS)
         for chunk in chunks:
             try:
@@ -141,11 +173,18 @@ class RelayBot(commands.Bot):
                 LOGGER.warning("TTS failed for guild=%s user=%s: %s", message.guild.id, message.author.id, exc)
                 continue
 
-            self.playback.enqueue(
+            item = self.playback.enqueue(
                 guild_id=message.guild.id,
                 audio_bytes=audio_bytes,
                 source_user_id=message.author.id,
                 source_message_id=message.id,
+            )
+            LOGGER.info(
+                "Queued TTS guild=%s user=%s seq=%s bytes=%s",
+                message.guild.id,
+                message.author.id,
+                item.sequence_id,
+                len(audio_bytes),
             )
 
     async def close(self) -> None:
@@ -206,11 +245,13 @@ async def join_voice(interaction: discord.Interaction) -> None:
         )
         return
 
+    await interaction.response.defer()
+
     try:
         voice_client = await _ensure_voice_recv_client(interaction, interaction.user)
     except Exception:
         LOGGER.exception("Failed to connect to voice channel")
-        await interaction.response.send_message("Could not connect to your voice channel.", ephemeral=True)
+        await interaction.followup.send("Could not connect to your voice channel.", ephemeral=True)
         return
 
     bot.sessions.upsert(interaction.guild.id, interaction.channel.id)
@@ -226,7 +267,7 @@ async def join_voice(interaction: discord.Interaction) -> None:
         bot._stt_sinks[interaction.guild.id] = sink
         voice_client.listen(sink)
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f"Connected to {voice_client.channel.mention if voice_client.channel else 'voice'} "
         f"from {interaction.channel.mention}.\n\n"
         "**Privacy:** Voice from users you add with `/stt_listen_user` may be transcribed into this "
@@ -507,6 +548,7 @@ async def stt_stop_all_listeners(interaction: discord.Interaction) -> None:
 
 async def main() -> None:
     load_dotenv()
+    _install_opus_decode_guard()
     discord_token = os.getenv("DISCORD_TOKEN")
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
     database_url = os.getenv("DATABASE_URL")

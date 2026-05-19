@@ -59,17 +59,29 @@ commanded text-to-speech listener support.
 - **TTS:** Listened messages with sensitive content or links are not synthesized or played in voice.
 - Set `OPENAI_API_KEY` for additional hate/harassment/violence screening via OpenAI's Moderation API.
 
-4. Run the bot:
+4. Start Postgres (if using local Docker):
+
+   ```bash
+   docker compose -f infra/docker-compose.yml up -d
+   ```
+
+   Example `DATABASE_URL`: `postgresql://app:app@localhost:5432/app`
+
+5. Initialize the database (once per `DATABASE_URL`; also runs automatically on bot startup):
+
+   ```bash
+   python -m apps.bot.init_db
+   ```
+
+6. Run the bot:
 
    ```bash
    python -m apps.bot.main
    ```
 
-5. Create the voice preferences table (first run only):
+   On startup you should see `Ensured Postgres schema: bot_voice_preferences` in the logs.
 
-   ```bash
-   cat apps/bot/sql/voice_preferences.sql | docker compose -f infra/docker-compose.yml exec -T postgres psql -U app -d app
-   ```
+   **Debug captured voice:** set `STT_DEBUG_SAVE_WAV=1` in `.env`. Each STT utterance is written to `stt_debug_audio/` as a WAV file (48 kHz stereo). Play with `ffplay stt_debug_audio/<file>.wav` or any audio player.
 
 ## Testing
 

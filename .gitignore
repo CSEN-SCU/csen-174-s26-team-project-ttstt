@@ -21,6 +21,9 @@ node_modules/
 .idea/
 .vscode/
 
+# STT debug captures (local dev only)
+stt_debug_audio/
+
 # Secrets
 .env
 .env.local
