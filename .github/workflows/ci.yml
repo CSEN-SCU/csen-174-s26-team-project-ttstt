@@ -9,10 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-      # Add more as needed, for example:
-      # DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -26,7 +22,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest
+          pip install -r apps/bot/requirements.txt
 
       - name: Run W5 test suite
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
         run: python -m pytest unittests
-
