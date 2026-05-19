@@ -25,6 +25,7 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger("ttstt-bot")
 
 MAX_TTS_CHARS = 300
+DEFAULT_HELP_URL = "https://csen-scu.github.io/csen-174-s26-team-project-ttstt/"
 
 
 def _install_opus_decode_guard() -> None:
@@ -75,6 +76,7 @@ class RelayBot(commands.Bot):
         db_pool: object,
         ffmpeg_executable: str,
         openai_api_key: str | None = None,
+        help_url: str = DEFAULT_HELP_URL,
     ) -> None:
         intents = discord.Intents.default()
         intents.guilds = True
@@ -92,6 +94,7 @@ class RelayBot(commands.Bot):
         self.stt_listeners = SttListenerRegistry()
         self.playback = PlaybackCoordinator(bot=self, ffmpeg_executable=ffmpeg_executable)
         self.openai_api_key = openai_api_key
+        self.help_url = help_url
         self._stt_sinks: dict[int, TranscriptionSink] = {}
 
     async def setup_hook(self) -> None:
@@ -107,6 +110,7 @@ class RelayBot(commands.Bot):
         self.tree.add_command(stt_listen_user)
         self.tree.add_command(stt_stop_listening_user)
         self.tree.add_command(stt_stop_all_listeners)
+        self.tree.add_command(help_command)
         await self.tree.sync()
 
     async def on_ready(self) -> None:
@@ -531,6 +535,21 @@ async def stt_stop_listening_user(interaction: discord.Interaction, user: discor
     await interaction.response.send_message(f"Stopped transcribing {user.mention}.", ephemeral=True)
 
 
+@app_commands.command(name="help", description="Open the TTSTT help guide in your browser.")
+async def help_command(interaction: discord.Interaction) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    embed = discord.Embed(
+        title="TTSTT Help",
+        description=(
+            "Full setup, commands, privacy, and troubleshooting:\n"
+            f"[Open the help guide]({bot.help_url})"
+        ),
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 @app_commands.command(name="stt_stop_all_listeners", description="Stop transcribing all users' voices in this server.")
 async def stt_stop_all_listeners(interaction: discord.Interaction) -> None:
     bot = interaction.client
@@ -553,6 +572,7 @@ async def main() -> None:
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
     database_url = os.getenv("DATABASE_URL")
     ffmpeg_executable = os.getenv("FFMPEG_EXECUTABLE", "ffmpeg")
+    help_url = os.getenv("HELP_URL", DEFAULT_HELP_URL)
     if not discord_token:
         raise RuntimeError("DISCORD_TOKEN must be set in .env.")
     if not deepgram_api_key:
@@ -569,6 +589,7 @@ async def main() -> None:
         db_pool=db_pool,
         ffmpeg_executable=ffmpeg_executable,
         openai_api_key=os.getenv("OPENAI_API_KEY"),
+        help_url=help_url,
     )
     try:
         await bot.start(bot.discord_token)
