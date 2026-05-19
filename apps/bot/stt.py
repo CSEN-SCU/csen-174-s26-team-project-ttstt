@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import array
 import asyncio
 import audioop
 import io
@@ -33,7 +34,17 @@ _CHANNELS = 2       # Discord delivers stereo PCM (both channels identical for a
 _SAMPLE_WIDTH = 2   # 16-bit signed LE
 _ASR_CHANNELS = 1   # downmix to mono before sending to ASR — halves payload, avoids duplicate transcripts
 SILENCE_TIMEOUT = 0.8  # seconds of silence before flushing an utterance
-MIN_PCM_BYTES = int(_SAMPLE_RATE * _CHANNELS * _SAMPLE_WIDTH * 0.25)  # 250 ms minimum (stereo)
+MIN_PCM_BYTES = int(_SAMPLE_RATE * _CHANNELS * _SAMPLE_WIDTH * 1.0)  # 1 s minimum (stereo)
+MAX_UTTERANCE_SEC = float(os.getenv("STT_MAX_UTTERANCE_SEC", "8"))
+MAX_PCM_BYTES = int(_SAMPLE_RATE * _CHANNELS * _SAMPLE_WIDTH * MAX_UTTERANCE_SEC)
+SILENCE_RMS_THRESHOLD = int(os.getenv("STT_SILENCE_RMS", "450"))
+# Attenuate hot mic input before it hard-clips in the PCM buffer (peak 32768).
+_INGRESS_PEAK_LIMIT = int(os.getenv("STT_INGRESS_PEAK", "8000"))
+_ANTIPHASE_FORCE_SIDE_RATIO = float(os.getenv("STT_ANTIPHASE_RATIO", "0.35"))
+_USE_OPUS_BUFFER = os.getenv("STT_OPUS_BUFFER", "1").strip().lower() not in {"0", "false", "no", "off"}
+# Discord voice PCM frame: 20 ms @ 48 kHz stereo 16-bit
+_PCM_FRAME_BYTES = int(_SAMPLE_RATE / 50) * _CHANNELS * _SAMPLE_WIDTH
+_MAX_OPUS_FRAMES = int(MAX_UTTERANCE_SEC / 0.02) + 1
 
 
 def _debug_save_wav_enabled() -> bool:
@@ -68,15 +79,69 @@ def _save_debug_wav(
     return path
 
 
-def _stereo_to_mono(pcm: bytes) -> bytes:
-    """Extract the left channel of interleaved stereo 16-bit PCM.
+def _antiphase_fraction(pcm: bytes, *, max_samples: int = 12_000) -> float:
+    """Share of stereo frames where L and R have opposite sign (mid-side / garble indicator)."""
+    samples = array.array("h")
+    samples.frombytes(pcm[: max_samples * _CHANNELS * _SAMPLE_WIDTH])
+    if len(samples) < 4:
+        return 0.0
+    pairs = min(len(samples) // 2, max_samples)
+    opposite = sum(1 for i in range(0, pairs * 2, 2) if samples[i] * samples[i + 1] < 0)
+    return opposite / pairs
 
-    Discord delivers stereo PCM where L and R can be in anti-phase (L = -R) due to
-    mid-side Opus coding or echo cancellation processing on the Discord server side.
-    Averaging (0.5*L + 0.5*R) cancels anti-phase frames to silence, destroying the
-    speech signal. Extracting just L avoids this regardless of L/R phase relationship.
-    """
-    return audioop.tomono(pcm, _SAMPLE_WIDTH, 1.0, 0.0)
+
+def _soft_limit_stereo_audio(pcm: bytes) -> bytes:
+    """Reduce gain on stereo PCM so hot mics do not saturate at int16 max (peak 32768)."""
+    peak = audioop.max(pcm, _SAMPLE_WIDTH)
+    if peak <= _INGRESS_PEAK_LIMIT:
+        return pcm
+    return audioop.mul(pcm, _SAMPLE_WIDTH, _INGRESS_PEAK_LIMIT / peak)
+
+
+def _decode_opus_frames(frames: list[bytes]) -> bytes:
+    """Decode buffered Opus packets with a fresh decoder (avoids cross-utterance state)."""
+    from discord.opus import OPUS_SILENCE, Decoder
+
+    decoder = Decoder()
+    parts: list[bytes] = []
+    for frame in frames:
+        if not frame or frame == OPUS_SILENCE:
+            continue
+        try:
+            parts.append(decoder.decode(frame, fec=False))
+        except Exception:
+            LOGGER.debug("Skipping corrupt Opus frame during STT decode", exc_info=True)
+    return b"".join(parts)
+
+
+def _downmix_variants(pcm: bytes) -> list[tuple[bytes, str]]:
+    """Build mono downmix candidates; order prefers side when channels are anti-phase."""
+    sw = _SAMPLE_WIDTH
+    left = audioop.tomono(pcm, sw, 1.0, 0.0)
+    right = audioop.tomono(pcm, sw, 0.0, 1.0)
+    mid = audioop.tomono(pcm, sw, 0.5, 0.5)
+    side = audioop.tomono(pcm, sw, 0.5, -0.5)
+    variants: dict[str, bytes] = {"mid": mid, "side": side, "L": left, "R": right}
+    antiphase = _antiphase_fraction(pcm)
+    if antiphase >= _ANTIPHASE_FORCE_SIDE_RATIO:
+        order = ("side", "L", "R", "mid")
+    else:
+        rms = {name: audioop.rms(chunk, sw) for name, chunk in variants.items()}
+        order = tuple(sorted(variants, key=lambda name: rms[name], reverse=True))
+    seen: set[str] = set()
+    out: list[tuple[bytes, str]] = []
+    for name in order:
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append((variants[name], name))
+    return out
+
+
+def _stereo_to_mono(pcm: bytes) -> tuple[bytes, str]:
+    """Pick the best mono downmix for ASR (first entry in ranked variants)."""
+    variants = _downmix_variants(pcm)
+    return variants[0]
 
 
 _NORMALIZE_TARGET_PEAK = 24000  # ~73% of 32767 — leaves headroom without over-compressing
@@ -106,22 +171,64 @@ def _wrap_pcm_as_wav(pcm: bytes, *, channels: int = _ASR_CHANNELS) -> bytes:
     return buf.read()
 
 
+def _is_mostly_silent_pcm(chunk: bytes) -> bool:
+    """Drop near-empty Opus decode frames (Craig-style; common on some voice servers)."""
+    if not chunk:
+        return True
+    if audioop.max(chunk, _SAMPLE_WIDTH) == 0:
+        return True
+    return audioop.rms(chunk, _SAMPLE_WIDTH) < 32
+
+
 class _UserBuffer:
-    __slots__ = ("pcm", "seq")
+    __slots__ = ("pcm", "opus_frames", "seq", "last_speech_at", "use_opus")
 
-    def __init__(self) -> None:
+    def __init__(self, *, use_opus: bool) -> None:
+        self.use_opus = use_opus
         self.pcm: bytearray = bytearray()
+        self.opus_frames: list[bytes] = []
         self.seq: int = 0
+        self.last_speech_at: float = time.monotonic()
 
-    def add(self, chunk: bytes) -> int:
+    def add_pcm(self, chunk: bytes) -> tuple[int, bool]:
+        if _is_mostly_silent_pcm(chunk):
+            self.seq += 1
+            return self.seq, False
+        chunk = _soft_limit_stereo_audio(chunk)
         self.pcm.extend(chunk)
         self.seq += 1
-        return self.seq
+        if audioop.rms(chunk, _SAMPLE_WIDTH) >= SILENCE_RMS_THRESHOLD:
+            self.last_speech_at = time.monotonic()
+        at_cap = len(self.pcm) >= MAX_PCM_BYTES
+        return self.seq, at_cap
 
-    def collect(self) -> bytes:
-        data = bytes(self.pcm)
-        self.pcm.clear()
-        return data
+    def add_opus(self, frame: bytes) -> tuple[int, bool]:
+        from discord.opus import OPUS_SILENCE
+
+        if not frame or frame == OPUS_SILENCE:
+            self.seq += 1
+            return self.seq, False
+        self.opus_frames.append(frame)
+        self.seq += 1
+        self.last_speech_at = time.monotonic()
+        at_cap = len(self.opus_frames) >= _MAX_OPUS_FRAMES
+        return self.seq, at_cap
+
+    def collect(self) -> tuple[bytes, str]:
+        if self.use_opus:
+            pcm = _decode_opus_frames(self.opus_frames)
+            self.opus_frames.clear()
+            source = "opus"
+        else:
+            pcm = bytes(self.pcm)
+            self.pcm.clear()
+            source = "pcm"
+        self.last_speech_at = time.monotonic()
+        pcm = _soft_limit_stereo_audio(pcm)
+        return pcm, source
+
+    def silent_long_enough(self) -> bool:
+        return (time.monotonic() - self.last_speech_at) >= SILENCE_TIMEOUT
 
 
 class SttListenerRegistry:
@@ -177,19 +284,39 @@ class TranscriptionSink(voice_recv.AudioSink):
         self._buffers: dict[int, _UserBuffer] = {}
 
     def wants_opus(self) -> bool:
-        return False
+        return _USE_OPUS_BUFFER
 
     def write(self, user: discord.User | None, data: voice_recv.VoiceData) -> None:
         if user is None or not self._listeners.contains(self._guild_id, user.id):
             return
 
-        buf = self._buffers.setdefault(user.id, _UserBuffer())
-        seq = buf.add(data.pcm)
+        buf = self._buffers.setdefault(
+            user.id, _UserBuffer(use_opus=_USE_OPUS_BUFFER)
+        )
+        if _USE_OPUS_BUFFER:
+            opus = data.opus
+            if not opus:
+                return
+            seq, force_max = buf.add_opus(opus)
+            has_audio = bool(buf.opus_frames)
+        else:
+            if not data.pcm:
+                return
+            seq, force_max = buf.add_pcm(data.pcm)
+            has_audio = bool(buf.pcm)
+        if not has_audio and not force_max:
+            return
 
         assert self.client is not None
+        loop = self.client.loop
+        if force_max:
+            asyncio.run_coroutine_threadsafe(
+                self._flush_utterance(user, buf, seq, reason="max_duration"),
+                loop,
+            )
         asyncio.run_coroutine_threadsafe(
             self._flush_after_silence(user, buf, seq),
-            self.client.loop,
+            loop,
         )
 
     async def _flush_after_silence(
@@ -197,14 +324,28 @@ class TranscriptionSink(voice_recv.AudioSink):
     ) -> None:
         await asyncio.sleep(SILENCE_TIMEOUT)
         if buf.seq != seq:
-            return  # newer audio arrived since this timer was scheduled
+            return
+        if not buf.silent_long_enough():
+            return
+        await self._flush_utterance(user, buf, seq, reason="silence")
 
-        pcm = buf.collect()
+    async def _flush_utterance(
+        self,
+        user: discord.User,
+        buf: _UserBuffer,
+        seq: int,
+        *,
+        reason: str,
+    ) -> None:
+        if buf.seq != seq:
+            return
+
+        pcm, audio_source = buf.collect()
         if len(pcm) < MIN_PCM_BYTES:
             # #region agent log
             _agent_log(
                 hypothesis_id="H6",
-                location="stt.py:_flush_after_silence:too_short",
+                location="stt.py:_flush_utterance:too_short",
                 message="PCM below minimum",
                 data={"pcm_bytes": len(pcm), "min_pcm_bytes": MIN_PCM_BYTES, "user_id": user.id},
             )
@@ -212,7 +353,7 @@ class TranscriptionSink(voice_recv.AudioSink):
             return
 
         pcm_peak = audioop.max(pcm, _SAMPLE_WIDTH)
-        mono_pcm = _stereo_to_mono(pcm)
+        antiphase = _antiphase_fraction(pcm)
         if pcm_peak >= 32700:
             LOGGER.warning(
                 "STT audio is clipping (peak=%s) for user=%s — "
@@ -220,47 +361,101 @@ class TranscriptionSink(voice_recv.AudioSink):
                 pcm_peak,
                 user.id,
             )
-        mono_pcm = _normalize_pcm(mono_pcm)
-        wav = _wrap_pcm_as_wav(mono_pcm)
-        _save_debug_wav(guild_id=self._guild_id, user_id=user.id, wav=wav, pcm_peak=pcm_peak)
-        mono_peak = audioop.max(mono_pcm, _SAMPLE_WIDTH)
+
+        downmix_variants = _downmix_variants(pcm)
+        text = ""
+        downmix_mode = downmix_variants[0][1] if downmix_variants else "none"
+        wav_bytes = 0
+        mono_peak = 0
+        winning_wav: bytes | None = None
+        modes_tried: list[str] = []
+        for mono_pcm, mode in downmix_variants:
+            modes_tried.append(mode)
+            normalized = _normalize_pcm(mono_pcm)
+            wav = _wrap_pcm_as_wav(normalized)
+            try:
+                candidate = await asyncio.to_thread(transcribe_audio, wav, self._asr_client)
+            except AsrTranscriptionError as exc:
+                LOGGER.warning("STT failed for user=%s (%s): %s", user.id, mode, exc)
+                continue
+            except Exception as exc:
+                LOGGER.warning("Unexpected STT error for user=%s (%s): %s", user.id, mode, exc)
+                continue
+            if candidate:
+                text = candidate
+                downmix_mode = mode
+                wav_bytes = len(wav)
+                mono_peak = audioop.max(normalized, _SAMPLE_WIDTH)
+                winning_wav = wav
+                break
+            # #region agent log
+            _agent_log(
+                hypothesis_id="H5",
+                location="stt.py:_flush_utterance:retry_downmix",
+                message="Empty transcript; trying next downmix",
+                data={"user_id": user.id, "downmix_mode": mode, "antiphase": round(antiphase, 3)},
+            )
+            # #endregion
+
+        if winning_wav is not None:
+            _save_debug_wav(
+                guild_id=self._guild_id, user_id=user.id, wav=winning_wav, pcm_peak=pcm_peak
+            )
+        elif downmix_variants:
+            first = _normalize_pcm(downmix_variants[0][0])
+            _save_debug_wav(
+                guild_id=self._guild_id,
+                user_id=user.id,
+                wav=_wrap_pcm_as_wav(first),
+                pcm_peak=pcm_peak,
+            )
+
         # #region agent log
         _agent_log(
             hypothesis_id="H7",
-            location="stt.py:_flush_after_silence:flush",
+            location="stt.py:_flush_utterance:flush",
             message="Flushing utterance to Deepgram",
             data={
                 "user_id": user.id,
                 "pcm_bytes": len(pcm),
-                "wav_bytes": len(wav),
+                "wav_bytes": wav_bytes,
                 "pcm_peak": pcm_peak,
                 "mono_peak_after_norm": mono_peak,
                 "was_clipping": pcm_peak >= 32700,
+                "downmix_mode": downmix_mode,
+                "modes_tried": modes_tried,
+                "antiphase": round(antiphase, 3),
+                "audio_source": audio_source,
+                "opus_buffer": _USE_OPUS_BUFFER,
+                "flush_reason": reason,
+                "utterance_sec": round(len(pcm) / (_SAMPLE_RATE * _CHANNELS * _SAMPLE_WIDTH), 2),
+                "transcript_len": len(text),
             },
         )
         # #endregion
-        try:
-            text = await asyncio.to_thread(transcribe_audio, wav, self._asr_client)
-        except AsrTranscriptionError as exc:
-            LOGGER.warning("STT failed for user=%s: %s", user.id, exc)
-            return
-        except Exception as exc:
-            LOGGER.warning("Unexpected STT error for user=%s: %s", user.id, exc)
-            return
 
         if not text:
             LOGGER.warning(
-                "STT empty transcript for user=%s (pcm_bytes=%s pcm_peak=%s); check mic input and Deepgram key",
+                "STT empty transcript for user=%s (pcm_bytes=%s pcm_peak=%s modes=%s); "
+                "check mic gain and Deepgram key",
                 user.id,
                 len(pcm),
                 pcm_peak,
+                modes_tried,
             )
             # #region agent log
             _agent_log(
                 hypothesis_id="H5",
-                location="stt.py:_flush_after_silence:empty_transcript",
+                location="stt.py:_flush_utterance:empty_transcript",
                 message="Deepgram returned empty transcript",
-                data={"user_id": user.id, "pcm_bytes": len(pcm), "pcm_peak": pcm_peak},
+                data={
+                    "user_id": user.id,
+                    "pcm_bytes": len(pcm),
+                    "pcm_peak": pcm_peak,
+                    "modes_tried": modes_tried,
+                    "antiphase": round(antiphase, 3),
+                    "audio_source": audio_source,
+                },
             )
             # #endregion
             return
@@ -292,7 +487,7 @@ class TranscriptionSink(voice_recv.AudioSink):
             # #region agent log
             _agent_log(
                 hypothesis_id="H8",
-                location="stt.py:_flush_after_silence:channel_missing",
+                location="stt.py:_flush_utterance:channel_missing",
                 message="Text channel not found in cache",
                 data={"text_channel_id": self._text_channel_id},
             )
@@ -307,7 +502,7 @@ class TranscriptionSink(voice_recv.AudioSink):
         # #region agent log
         _agent_log(
             hypothesis_id="H8",
-            location="stt.py:_flush_after_silence:posted",
+            location="stt.py:_flush_utterance:posted",
             message="Posted transcript to channel",
             data={"text_channel_id": self._text_channel_id, "text_len": len(public_text)},
         )

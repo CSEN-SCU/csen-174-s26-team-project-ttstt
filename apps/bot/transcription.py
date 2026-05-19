@@ -68,7 +68,7 @@ def _extract_transcript_from_response(response: object) -> tuple[str, list[str]]
 class DeepgramAsrClient:
     """Deepgram-backed ASR client using the pre-recorded transcription API (SDK v4)."""
 
-    def __init__(self, api_key: str, model: str = "nova-3") -> None:
+    def __init__(self, api_key: str, model: str = "nova-2") -> None:
         if not api_key:
             raise ValueError("Deepgram API key is required for ASR")
         self._api_key = api_key
