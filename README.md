@@ -18,6 +18,8 @@ This repository contains a working deployable Discord bot at [`apps/bot`](apps/b
 
 See [`apps/bot/README.md`](apps/bot/README.md) for setup and usage.
 
+**Help guide (public):** https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ — also linked from `/help` in Discord.
+
 ## Repository layout
 
 | Location | Purpose |

@@ -5,6 +5,7 @@ commanded text-to-speech listener support.
 
 ## Current Commands
 
+- `/help` - Link to the public help guide (GitHub Pages).
 - `/join` - Join the command invoker's current voice channel.
 - `/leave` - Disconnect from voice in the current server.
 - `/status` - Report current voice connection status for the server.
@@ -14,6 +15,8 @@ commanded text-to-speech listener support.
 - `/tts_voice_set` - Set your own TTS voice/model, speed, pitch, and style for the current server.
 - `/tts_voice_show` - Show your saved TTS settings for the current server.
 - `/tts_voice_reset` - Reset your TTS settings to defaults for the current server.
+
+Public help site: https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ (see [`docs/help`](../../docs/help)).
 
 ## Requirements
 
@@ -51,6 +54,7 @@ commanded text-to-speech listener support.
    - `DATABASE_URL`
    - Optional: `FFMPEG_EXECUTABLE` (defaults to `ffmpeg`)
    - Optional: `OPENAI_API_KEY` (enables OpenAI Moderation API checks on TTS text)
+   - Optional: `HELP_URL` (defaults to the GitHub Pages help site for `/help`)
 
 ## Privacy and content safety
 
@@ -116,3 +120,4 @@ CMD ["python", "-m", "apps.bot.main"]
 
 Set `DISCORD_TOKEN` in your runtime environment/secrets manager.
 Also set `DEEPGRAM_API_KEY` and `DATABASE_URL`.
+Optional: `HELP_URL` for the `/help` command link.

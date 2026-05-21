@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="TTSTT help: Discord bot commands, quick start, privacy, and troubleshooting."
+    />
+    <title>TTSTT Help</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>TTSTT Help</h1>
+        <p class="tagline">
+          Text To Speech To Text bridges voice and text in Discord: transcribe speech to
+          readable messages, and read selected users' chat aloud in voice channels.
+        </p>
+        <a
+          class="btn"
+          href="https://discord.com/oauth2/authorize?client_id=1496265708215075016"
+          >Add bot to your server</a
+        >
+      </header>
+
+      <nav class="toc" aria-label="On this page">
+        <h2>On this page</h2>
+        <ul>
+          <li><a href="#quick-start">Quick start</a></li>
+          <li><a href="#commands">Commands</a></li>
+          <li><a href="#privacy">Privacy &amp; safety</a></li>
+          <li><a href="#faq">FAQ &amp; troubleshooting</a></li>
+        </ul>
+      </nav>
+
+      <section id="quick-start">
+        <h2>Quick start</h2>
+        <p>
+          Run slash commands in a <strong>server text channel</strong>. The channel where you
+          run <code>/join</code> becomes the control channel for that server.
+        </p>
+
+        <h3>Text-to-speech (read chat in voice)</h3>
+        <ol class="steps">
+          <li>Join a voice channel, then run <code>/join</code> in the text channel you want to use.</li>
+          <li>Run <code>/tts_listen_user</code> and pick whose messages should be read aloud.</li>
+          <li>Those users post in the <strong>same text channel</strong>; the bot speaks in voice.</li>
+          <li>Optional: <code>/tts_voice_set</code> to customize your synthetic voice per server.</li>
+          <li>Run <code>/tts_stop_listening_user</code> or <code>/tts_stop_all_listeners</code> when done.</li>
+        </ol>
+
+        <h3>Speech-to-text (voice to text)</h3>
+        <ol class="steps">
+          <li>Run <code>/join</code> from your control text channel (same as above).</li>
+          <li>Run <code>/stt_listen_user</code> for each speaker you want transcribed.</li>
+          <li>When they speak in voice, transcripts appear in the control text channel.</li>
+          <li>Run <code>/stt_stop_listening_user</code> or <code>/stt_stop_all_listeners</code> to stop.</li>
+        </ol>
+
+        <p>
+          In Discord, type <code>/help</code> anytime for a link back to this page.
+        </p>
+      </section>
+
+      <section id="commands">
+        <h2>Commands</h2>
+
+        <h3>Voice</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/join</code></td>
+              <td>Join your current voice channel and bind this text channel as the control channel.</td>
+            </tr>
+            <tr>
+              <td><code>/leave</code></td>
+              <td>Disconnect from voice and clear listeners for this server.</td>
+            </tr>
+            <tr>
+              <td><code>/status</code></td>
+              <td>Show voice connection, control channel, and how many TTS listeners are active.</td>
+            </tr>
+            <tr>
+              <td><code>/help</code></td>
+              <td>Open this help guide (link sent in Discord).</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Text-to-speech (TTS)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/tts_listen_user</code></td>
+              <td>Start reading a user's messages from the control channel aloud in voice.</td>
+            </tr>
+            <tr>
+              <td><code>/tts_stop_listening_user</code></td>
+              <td>Stop reading one user.</td>
+            </tr>
+            <tr>
+              <td><code>/tts_stop_all_listeners</code></td>
+              <td>Stop reading all configured users in this server.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Speech-to-text (STT)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/stt_listen_user</code></td>
+              <td>Transcribe a user's voice into the control text channel.</td>
+            </tr>
+            <tr>
+              <td><code>/stt_stop_listening_user</code></td>
+              <td>Stop transcribing one user.</td>
+            </tr>
+            <tr>
+              <td><code>/stt_stop_all_listeners</code></td>
+              <td>Stop transcribing all users in this server.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Voice preferences (per user, per server)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/tts_voice_set</code></td>
+              <td>
+                Set Deepgram voice/model, speed (0.5–2.0), pitch (−20–20), and optional style.
+              </td>
+            </tr>
+            <tr>
+              <td><code>/tts_voice_show</code></td>
+              <td>Show your saved TTS settings for this server.</td>
+            </tr>
+            <tr>
+              <td><code>/tts_voice_reset</code></td>
+              <td>Reset your TTS settings to defaults for this server.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="privacy">
+        <h2>Privacy &amp; safety</h2>
+        <div class="note">
+          <strong>Before you use TTSTT:</strong> Voice and text in your server may be sent to
+          speech AI providers for transcription and synthesis. Only add the bot where members
+          understand and consent.
+        </div>
+
+        <ul>
+          <li>
+            <code>/join</code> explains that STT and TTS may process user content in the server.
+          </li>
+          <li>
+            <strong>STT:</strong> Transcripts matching self-harm, medical, or minor-disclosure
+            patterns are not posted publicly; the speaker may receive a private DM (including a
+            988 crisis line reference for self-harm matches). <code>http://</code> and
+            <code>https://</code> URLs are replaced with <code>[link removed]</code> in public posts.
+          </li>
+          <li>
+            <strong>TTS:</strong> Listened messages with sensitive content or links are not
+            synthesized or played in voice.
+          </li>
+          <li>
+            Set <code>OPENAI_API_KEY</code> on the bot host for additional hate, harassment, and
+            violence screening via OpenAI's Moderation API (operator configuration, not end-user).
+          </li>
+        </ul>
+      </section>
+
+      <section id="faq">
+        <h2>FAQ &amp; troubleshooting</h2>
+        <dl class="faq">
+          <dt>The bot does not respond to slash commands</dt>
+          <dd>
+            Confirm the bot is online, invited with slash-command scope, and that command sync has
+            finished after a deploy (global sync can take up to about an hour). Restart the bot
+            after code updates.
+          </dd>
+
+          <dt><code>/join</code> fails or the bot never hears voice</dt>
+          <dd>
+            The bot needs <strong>Connect</strong>, <strong>Speak</strong>, and
+            <strong>View Channel</strong> in the voice channel. In the
+            <a href="https://discord.com/developers/applications">Discord Developer Portal</a>,
+            enable <strong>Guilds</strong>, <strong>Voice States</strong>, and
+            <strong>Message Content</strong> privileged intents for the application.
+          </dd>
+
+          <dt>TTS does not read my messages</dt>
+          <dd>
+            Run <code>/join</code> in the text channel you want to use, then
+            <code>/tts_listen_user</code> for your account. Messages must be posted in that same
+            control channel while the bot is connected to voice.
+          </dd>
+
+          <dt>STT does not post transcripts</dt>
+          <dd>
+            Run <code>/join</code>, then <code>/stt_listen_user</code> for the speaker. They must be
+            unmuted and speaking in the voice channel the bot joined. Sensitive speech may be DMed
+            instead of posted publicly.
+          </dd>
+
+          <dt>Voice sounds broken or the bot crashes in voice</dt>
+          <dd>
+            The host running the bot needs <strong>FFmpeg</strong> and Opus support. Set
+            <code>FFMPEG_EXECUTABLE</code> if <code>ffmpeg</code> is not on PATH.
+          </dd>
+
+          <dt>Voice preferences do not save</dt>
+          <dd>
+            The bot requires a working <code>DATABASE_URL</code> (PostgreSQL). Run schema init once:
+            <code>python -m apps.bot.init_db</code>.
+          </dd>
+
+          <dt>Who operates this bot?</dt>
+          <dd>
+            TTSTT is a CSEN 174 team project (Noelle Evanich, Diego Silva, Dana Steinke). Server
+            admins are responsible for inviting the bot and informing their community.
+          </dd>
+        </dl>
+      </section>
+
+      <footer>
+        <p>
+          <a href="https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt">Source on GitHub</a>
+          · TTSTT · Last updated May 2026
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>
