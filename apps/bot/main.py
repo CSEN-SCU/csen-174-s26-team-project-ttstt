@@ -17,7 +17,12 @@ from apps.bot.playback import PlaybackCoordinator
 from apps.bot.session_registry import SessionRegistry
 from apps.bot.tts import DeepgramTtsClient, TtsSynthesisError, chunk_text_for_tts, synthesize_text
 from apps.bot.tts_listener_registry import TtsListenerRegistry
-from apps.bot.voice_preferences import PostgresVoicePreferencesRepository, VoicePreferences
+from apps.bot.voice_preferences import (
+    FEATURED_AURA2_VOICES,
+    PostgresVoicePreferencesRepository,
+    format_voice_settings_message,
+    merge_voice_preferences,
+)
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger("ttstt-bot")
@@ -340,27 +345,12 @@ async def tts_stop_all_listeners(interaction: discord.Interaction) -> None:
     )
 
 
-def _merge_preferences(
-    existing: VoicePreferences,
-    voice: str | None,
-    speed: float | None,
-    pitch: float | None,
-    style: str | None,
-) -> VoicePreferences:
-    return VoicePreferences(
-        voice=voice if voice is not None else existing.voice,
-        speed=speed if speed is not None else existing.speed,
-        pitch=pitch if pitch is not None else existing.pitch,
-        style=style if style is not None else existing.style,
-    )
-
-
 @app_commands.command(name="tts_voice_set", description="Set your TTS voice preferences in this server.")
 @app_commands.describe(
-    voice="Deepgram voice/model id, e.g. aura-2-thalia-en",
+    voice="Deepgram Aura model id (pick from suggestions or type any valid id)",
     speed="Speech speed between 0.5 and 2.0",
     pitch="Pitch between -20 and 20",
-    style="Optional style/tone label",
+    style="Optional style/tone label; use none to clear",
 )
 async def tts_voice_set(
     interaction: discord.Interaction,
@@ -376,14 +366,25 @@ async def tts_voice_set(
         await interaction.response.send_message("Use this command in a server.", ephemeral=True)
         return
 
+    if voice is None and speed is None and pitch is None and style is None:
+        await interaction.response.send_message(
+            "Provide at least one option: voice, speed, pitch, or style "
+            "(use style `none` to clear a saved style).",
+            ephemeral=True,
+        )
+        return
+
     current = await bot.voice_preferences.get(guild_id=interaction.guild.id, user_id=interaction.user.id)
-    merged = _merge_preferences(current, voice=voice, speed=speed, pitch=pitch, style=style)
+    merged = merge_voice_preferences(current, voice=voice, speed=speed, pitch=pitch, style=style)
     try:
         saved = await bot.voice_preferences.upsert(
             guild_id=interaction.guild.id,
             user_id=interaction.user.id,
             prefs=merged,
         )
+    except ValueError as exc:
+        await interaction.response.send_message(str(exc), ephemeral=True)
+        return
     except Exception as exc:
         LOGGER.warning("Failed to persist TTS prefs: %r", exc)
         await interaction.response.send_message(
@@ -393,10 +394,19 @@ async def tts_voice_set(
         return
 
     await interaction.response.send_message(
-        f"Saved voice settings: voice=`{saved.voice}`, speed={saved.speed}, pitch={saved.pitch}, "
-        f"style={saved.style or 'default'}.",
+        format_voice_settings_message(saved, prefix="Saved voice settings"),
         ephemeral=True,
     )
+
+
+@tts_voice_set.autocomplete("voice")
+async def tts_voice_set_voice_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    needle = (current or "").strip().lower()
+    matches = [v for v in FEATURED_AURA2_VOICES if needle in v]
+    return [app_commands.Choice(name=model, value=model) for model in matches[:25]]
 
 
 @app_commands.command(name="tts_voice_show", description="Show your TTS voice preferences in this server.")
@@ -410,8 +420,7 @@ async def tts_voice_show(interaction: discord.Interaction) -> None:
 
     prefs = await bot.voice_preferences.get(guild_id=interaction.guild.id, user_id=interaction.user.id)
     await interaction.response.send_message(
-        f"Your voice settings: voice=`{prefs.voice}`, speed={prefs.speed}, pitch={prefs.pitch}, "
-        f"style={prefs.style or 'default'}.",
+        format_voice_settings_message(prefs, prefix="Your voice settings"),
         ephemeral=True,
     )
 
@@ -436,8 +445,7 @@ async def tts_voice_reset(interaction: discord.Interaction) -> None:
         return
 
     await interaction.response.send_message(
-        f"Reset to defaults: voice=`{prefs.voice}`, speed={prefs.speed}, pitch={prefs.pitch}, "
-        f"style={prefs.style or 'default'}.",
+        format_voice_settings_message(prefs, prefix="Reset to defaults"),
         ephemeral=True,
     )
 
