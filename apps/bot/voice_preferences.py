@@ -15,6 +15,24 @@ MAX_SPEED = 2.0
 MIN_PITCH = -20.0
 MAX_PITCH = 20.0
 
+# Featured Aura 2 English voices (Deepgram docs); autocomplete also accepts any model id.
+FEATURED_AURA2_VOICES: tuple[str, ...] = (
+    "aura-2-thalia-en",
+    "aura-2-andromeda-en",
+    "aura-2-helena-en",
+    "aura-2-apollo-en",
+    "aura-2-arcas-en",
+    "aura-2-aries-en",
+    "aura-2-asteria-en",
+    "aura-2-athena-en",
+    "aura-2-atlas-en",
+    "aura-2-aurora-en",
+    "aura-2-callista-en",
+    "aura-2-cora-en",
+)
+
+STYLE_CLEAR_TOKENS = frozenset({"", "none", "default", "clear"})
+
 UPSERT_PREFERENCES_SQL = """
 INSERT INTO bot_voice_preferences (
     guild_id,
@@ -75,6 +93,41 @@ class VoicePreferences:
         if self.style:
             payload["style"] = self.style
         return payload
+
+
+def merge_voice_preferences(
+    existing: VoicePreferences,
+    *,
+    voice: str | None = None,
+    speed: float | None = None,
+    pitch: float | None = None,
+    style: str | None = None,
+) -> VoicePreferences:
+    """Apply partial updates; style tokens none/default/clear remove the style."""
+
+    new_voice = existing.voice
+    if voice is not None:
+        new_voice = voice.strip()
+
+    new_speed = existing.speed if speed is None else speed
+    new_pitch = existing.pitch if pitch is None else pitch
+
+    new_style = existing.style
+    if style is not None:
+        stripped = style.strip()
+        if stripped.lower() in STYLE_CLEAR_TOKENS:
+            new_style = None
+        else:
+            new_style = stripped
+
+    return VoicePreferences(voice=new_voice, speed=new_speed, pitch=new_pitch, style=new_style)
+
+
+def format_voice_settings_message(prefs: VoicePreferences, *, prefix: str) -> str:
+    return (
+        f"{prefix}: voice=`{prefs.voice}`, speed={prefs.speed}, pitch={prefs.pitch}, "
+        f"style={prefs.style or 'default'}."
+    )
 
 
 class VoicePreferencesRepository(Protocol):

@@ -1,4 +1,4 @@
-"""Content safety checks for STT transcript relay and TTS playback."""
+"""Content safety checks for TTS playback."""
 
 from __future__ import annotations
 
@@ -9,14 +9,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
 
 LOGGER = logging.getLogger(__name__)
-
-CRISIS_RESOURCE = (
-    "If you or someone you know is struggling, the 988 Suicide & Crisis Lifeline "
-    "is available by call or text (US)."
-)
 
 URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
 
@@ -47,7 +41,6 @@ _OPENAI_SCORE_THRESHOLD = 0.75
 
 class Disposition(str, Enum):
     PUBLIC = "public"
-    PRIVATE_DM = "private_dm"
     BLOCKED = "blocked"
 
 
@@ -55,14 +48,8 @@ class Disposition(str, Enum):
 class ModerationOutcome:
     disposition: Disposition
     public_text: str | None = None
-    dm_body: str | None = None
-    crisis_footer: str | None = None
     user_message: str | None = None
     log_reason: str = ""
-
-
-def redact_urls(text: str) -> str:
-    return URL_PATTERN.sub("[link removed]", text)
 
 
 def contains_url(text: str) -> bool:
@@ -77,17 +64,6 @@ def matches_sensitive(text: str) -> bool:
     if matches_self_harm(text):
         return True
     return any(pattern.search(text) for pattern in _SENSITIVE_PATTERNS)
-
-
-def format_sensitive_dm(body: str, crisis_footer: str | None) -> str:
-    message = (
-        "Your voice was transcribed but **not** posted to the text channel "
-        "because it may contain sensitive content.\n\n"
-        f"> {body}"
-    )
-    if crisis_footer:
-        message = f"{message}\n\n*{crisis_footer}*"
-    return message
 
 
 def _openai_moderation_flags(text: str, api_key: str) -> tuple[bool, bool]:
@@ -128,24 +104,12 @@ def _openai_moderation_flags(text: str, api_key: str) -> tuple[bool, bool]:
     return should_block, self_harm
 
 
-def _apply_openai(
-    text: str,
-    api_key: str | None,
-    *,
-    mode: Literal["transcript", "tts"],
-) -> ModerationOutcome | None:
+def _apply_openai_tts(text: str, api_key: str | None) -> ModerationOutcome | None:
     if not api_key:
         return None
 
     should_block, self_harm = _openai_moderation_flags(text, api_key)
     if self_harm:
-        if mode == "transcript":
-            return ModerationOutcome(
-                disposition=Disposition.PRIVATE_DM,
-                dm_body=text,
-                crisis_footer=CRISIS_RESOURCE,
-                log_reason="openai_self_harm",
-            )
         return ModerationOutcome(
             disposition=Disposition.BLOCKED,
             user_message="This message cannot be read aloud because it may involve self-harm.",
@@ -160,40 +124,6 @@ def _apply_openai(
     return None
 
 
-def moderate_for_transcript(text: str, *, openai_api_key: str | None = None) -> ModerationOutcome:
-    """Decide how a voice transcript may be relayed to Discord."""
-
-    stripped = text.strip()
-    if not stripped:
-        return ModerationOutcome(disposition=Disposition.BLOCKED, log_reason="empty")
-
-    openai_result = _apply_openai(stripped, openai_api_key, mode="transcript")
-    if openai_result is not None:
-        return openai_result
-
-    if matches_self_harm(stripped):
-        return ModerationOutcome(
-            disposition=Disposition.PRIVATE_DM,
-            dm_body=stripped,
-            crisis_footer=CRISIS_RESOURCE,
-            log_reason="self_harm_keywords",
-        )
-
-    if matches_sensitive(stripped):
-        return ModerationOutcome(
-            disposition=Disposition.PRIVATE_DM,
-            dm_body=stripped,
-            log_reason="sensitive_keywords",
-        )
-
-    public_text = redact_urls(stripped) if contains_url(stripped) else stripped
-    return ModerationOutcome(
-        disposition=Disposition.PUBLIC,
-        public_text=public_text,
-        log_reason="url_redacted" if public_text != stripped else "allowed",
-    )
-
-
 def moderate_for_tts(text: str, *, openai_api_key: str | None = None) -> ModerationOutcome:
     """Decide whether text may be synthesized and played in a voice channel."""
 
@@ -205,7 +135,7 @@ def moderate_for_tts(text: str, *, openai_api_key: str | None = None) -> Moderat
             log_reason="empty",
         )
 
-    openai_result = _apply_openai(stripped, openai_api_key, mode="tts")
+    openai_result = _apply_openai_tts(stripped, openai_api_key)
     if openai_result is not None:
         return openai_result
 

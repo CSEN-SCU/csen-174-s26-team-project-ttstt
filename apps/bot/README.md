@@ -12,12 +12,9 @@ commanded text-to-speech listener support.
 - `/tts_listen_user <user>` - Start reading text messages from a selected user in the control channel.
 - `/tts_stop_listening_user <user>` - Stop reading one selected user's messages.
 - `/tts_stop_all_listeners` - Stop reading all configured users in the server.
-- `/tts_voice_set` - Set your own TTS voice/model, speed, pitch, and style for the current server.
+- `/tts_voice_set` - Set your own TTS voice/model, speed, pitch, and style for the current server (partial updates; use style `none` to clear).
 - `/tts_voice_show` - Show your saved TTS settings for the current server.
 - `/tts_voice_reset` - Reset your TTS settings to defaults for the current server.
-- `/stt_listen_user <user>` - Start transcribing a user's voice to the control text channel.
-- `/stt_stop_listening_user <user>` - Stop transcribing one user.
-- `/stt_stop_all_listeners` - Stop transcribing all users in the server.
 
 Public help site: https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ (see [`docs/help`](../../docs/help)).
 
@@ -56,13 +53,12 @@ Public help site: https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ (s
    - `DEEPGRAM_API_KEY`
    - `DATABASE_URL`
    - Optional: `FFMPEG_EXECUTABLE` (defaults to `ffmpeg`)
-   - Optional: `OPENAI_API_KEY` (enables OpenAI Moderation API checks on STT/TTS text)
+   - Optional: `OPENAI_API_KEY` (enables OpenAI Moderation API checks on TTS text)
    - Optional: `HELP_URL` (defaults to the GitHub Pages help site for `/help`)
 
 ## Privacy and content safety
 
-- `/join` warns that STT and TTS features transcribe or read aloud user content in the server.
-- **STT:** Transcripts matching self-harm, medical, or minor-disclosure patterns are not posted publicly; the speaker gets a private DM (with a 988 crisis line for self-harm matches). `http://` and `https://` URLs are replaced with `[link removed]` in public posts.
+- `/join` warns that TTS may read aloud user messages in the server.
 - **TTS:** Listened messages with sensitive content or links are not synthesized or played in voice.
 - Set `OPENAI_API_KEY` for additional hate/harassment/violence screening via OpenAI's Moderation API.
 
@@ -87,8 +83,6 @@ Public help site: https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ (s
    ```
 
    On startup you should see `Ensured Postgres schema: bot_voice_preferences` in the logs.
-
-   **Debug captured voice:** set `STT_DEBUG_SAVE_WAV=1` in `.env`. Each STT utterance is written to `stt_debug_audio/` as a WAV file (48 kHz stereo). Play with `ffplay stt_debug_audio/<file>.wav` or any audio player.
 
 ## Testing
 
