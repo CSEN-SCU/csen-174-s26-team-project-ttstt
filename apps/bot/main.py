@@ -8,15 +8,13 @@ import os
 
 import discord
 from discord import app_commands
-from discord.ext import commands, voice_recv
+from discord.ext import commands
 from dotenv import load_dotenv
 
 from apps.bot.content_moderation import Disposition, moderate_for_tts
 from apps.bot.db import create_postgres_pool
 from apps.bot.playback import PlaybackCoordinator
 from apps.bot.session_registry import SessionRegistry
-from apps.bot.stt import SttListenerRegistry, TranscriptionSink
-from apps.bot.transcription import DeepgramAsrClient
 from apps.bot.tts import DeepgramTtsClient, TtsSynthesisError, chunk_text_for_tts, synthesize_text
 from apps.bot.tts_listener_registry import TtsListenerRegistry
 from apps.bot.voice_preferences import PostgresVoicePreferencesRepository, VoicePreferences
@@ -25,29 +23,6 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger("ttstt-bot")
 
 MAX_TTS_CHARS = 300
-
-
-def _install_opus_decode_guard() -> None:
-    """Prevent corrupted Opus packets from crashing voice-recv router threads."""
-
-    if getattr(discord.opus.Decoder.decode, "_relay_guard_installed", False):
-        return
-
-    original_decode = discord.opus.Decoder.decode
-
-    def guarded_decode(self: discord.opus.Decoder, data: bytes | None, *, fec: bool = False) -> bytes:
-        try:
-            return original_decode(self, data, fec=fec)
-        except discord.opus.OpusError:
-            # Swallow any Opus decode error and request PLC (packet loss concealment)
-            # so the voice-recv router thread keeps running instead of crashing.
-            try:
-                return original_decode(self, None, fec=False)
-            except Exception:
-                return b""
-
-    setattr(guarded_decode, "_relay_guard_installed", True)
-    discord.opus.Decoder.decode = guarded_decode  # type: ignore[assignment]
 
 
 def _should_enqueue_message(
@@ -70,7 +45,6 @@ class RelayBot(commands.Bot):
         self,
         discord_token: str,
         tts_client: DeepgramTtsClient,
-        asr_client: DeepgramAsrClient,
         voice_preferences: PostgresVoicePreferencesRepository,
         db_pool: object,
         ffmpeg_executable: str,
@@ -84,15 +58,12 @@ class RelayBot(commands.Bot):
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.discord_token = discord_token
         self.tts_client = tts_client
-        self.asr_client = asr_client
         self.voice_preferences = voice_preferences
         self.db_pool = db_pool
         self.sessions = SessionRegistry()
         self.listeners = TtsListenerRegistry()
-        self.stt_listeners = SttListenerRegistry()
         self.playback = PlaybackCoordinator(bot=self, ffmpeg_executable=ffmpeg_executable)
         self.openai_api_key = openai_api_key
-        self._stt_sinks: dict[int, TranscriptionSink] = {}
 
     async def setup_hook(self) -> None:
         self.tree.add_command(join_voice)
@@ -104,9 +75,6 @@ class RelayBot(commands.Bot):
         self.tree.add_command(tts_voice_set)
         self.tree.add_command(tts_voice_show)
         self.tree.add_command(tts_voice_reset)
-        self.tree.add_command(stt_listen_user)
-        self.tree.add_command(stt_stop_listening_user)
-        self.tree.add_command(stt_stop_all_listeners)
         await self.tree.sync()
 
     async def on_ready(self) -> None:
@@ -152,7 +120,7 @@ class RelayBot(commands.Bot):
 
         try:
             prefs = await self.voice_preferences.get(guild_id=message.guild.id, user_id=message.author.id)
-        except Exception as exc:
+        except Exception:
             LOGGER.exception(
                 "Voice preferences lookup failed for guild=%s user=%s",
                 message.guild.id,
@@ -197,21 +165,17 @@ class RelayBot(commands.Bot):
         await super().close()
 
 
-async def _ensure_voice_recv_client(
+async def _ensure_voice_client(
     interaction: discord.Interaction,
     member: discord.Member,
-) -> voice_recv.VoiceRecvClient:
+) -> discord.VoiceClient:
     guild = interaction.guild
     assert guild is not None
     assert member.voice is not None
 
     existing = guild.voice_client
     if existing is None:
-        return await member.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
-
-    if not isinstance(existing, voice_recv.VoiceRecvClient):
-        await existing.disconnect(force=True)
-        return await member.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+        return await member.voice.channel.connect()
 
     if existing.channel != member.voice.channel:
         await existing.move_to(member.voice.channel)
@@ -248,7 +212,7 @@ async def join_voice(interaction: discord.Interaction) -> None:
     await interaction.response.defer()
 
     try:
-        voice_client = await _ensure_voice_recv_client(interaction, interaction.user)
+        voice_client = await _ensure_voice_client(interaction, interaction.user)
     except Exception:
         LOGGER.exception("Failed to connect to voice channel")
         await interaction.followup.send("Could not connect to your voice channel.", ephemeral=True)
@@ -256,23 +220,10 @@ async def join_voice(interaction: discord.Interaction) -> None:
 
     bot.sessions.upsert(interaction.guild.id, interaction.channel.id)
 
-    if not voice_client.is_listening():
-        sink = TranscriptionSink(
-            asr_client=bot.asr_client,
-            listeners=bot.stt_listeners,
-            guild_id=interaction.guild.id,
-            text_channel_id=interaction.channel.id,
-            openai_api_key=bot.openai_api_key,
-        )
-        bot._stt_sinks[interaction.guild.id] = sink
-        voice_client.listen(sink)
-
     await interaction.followup.send(
         f"Connected to {voice_client.channel.mention if voice_client.channel else 'voice'} "
         f"from {interaction.channel.mention}.\n\n"
-        "**Privacy:** Voice from users you add with `/stt_listen_user` may be transcribed into this "
-        "channel. Sensitive speech may be sent to the speaker by DM instead. Links in speech are "
-        "redacted in public posts. Text from users you add with `/tts_listen_user` may be read aloud "
+        "**Privacy:** Text from users you add with `/tts_listen_user` may be read aloud "
         "in voice after content safety checks."
     )
 
@@ -293,11 +244,7 @@ async def leave_voice(interaction: discord.Interaction) -> None:
 
     bot.sessions.remove(interaction.guild.id)
     bot.listeners.clear(interaction.guild.id)
-    bot.stt_listeners.clear(interaction.guild.id)
-    bot._stt_sinks.pop(interaction.guild.id, None)
     bot.playback.clear_guild(interaction.guild.id)
-    if isinstance(voice_client, voice_recv.VoiceRecvClient) and voice_client.is_listening():
-        voice_client.stop_listening()
     await voice_client.disconnect(force=True)
     await interaction.response.send_message("Disconnected from voice.")
 
@@ -491,64 +438,8 @@ async def tts_voice_reset(interaction: discord.Interaction) -> None:
     )
 
 
-@app_commands.command(name="stt_listen_user", description="Start transcribing this user's voice to text.")
-@app_commands.describe(user="User whose spoken words should appear in the text channel")
-async def stt_listen_user(interaction: discord.Interaction, user: discord.Member) -> None:
-    bot = interaction.client
-    assert isinstance(bot, RelayBot)
-
-    if interaction.guild is None or not isinstance(interaction.channel, discord.TextChannel):
-        await interaction.response.send_message("Use this command in a guild text channel.", ephemeral=True)
-        return
-
-    voice_client = interaction.guild.voice_client
-    if voice_client is None or not voice_client.is_connected():
-        await interaction.response.send_message("Run `/join` first so I am connected to voice.", ephemeral=True)
-        return
-
-    bot.stt_listeners.add(guild_id=interaction.guild.id, user_id=user.id)
-    await interaction.response.send_message(
-        f"Now transcribing {user.mention}'s voice to text.", ephemeral=True
-    )
-
-
-@app_commands.command(name="stt_stop_listening_user", description="Stop transcribing this user's voice.")
-@app_commands.describe(user="User to remove from STT transcription")
-async def stt_stop_listening_user(interaction: discord.Interaction, user: discord.Member) -> None:
-    bot = interaction.client
-    assert isinstance(bot, RelayBot)
-
-    if interaction.guild is None:
-        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
-        return
-
-    removed = bot.stt_listeners.remove(guild_id=interaction.guild.id, user_id=user.id)
-    if not removed:
-        await interaction.response.send_message(
-            f"{user.mention} is not currently being transcribed.", ephemeral=True
-        )
-        return
-    await interaction.response.send_message(f"Stopped transcribing {user.mention}.", ephemeral=True)
-
-
-@app_commands.command(name="stt_stop_all_listeners", description="Stop transcribing all users' voices in this server.")
-async def stt_stop_all_listeners(interaction: discord.Interaction) -> None:
-    bot = interaction.client
-    assert isinstance(bot, RelayBot)
-
-    if interaction.guild is None:
-        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
-        return
-
-    cleared = bot.stt_listeners.clear(interaction.guild.id)
-    await interaction.response.send_message(
-        f"Stopped transcribing {len(cleared)} user(s) in this server.", ephemeral=True
-    )
-
-
 async def main() -> None:
     load_dotenv()
-    _install_opus_decode_guard()
     discord_token = os.getenv("DISCORD_TOKEN")
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
     database_url = os.getenv("DATABASE_URL")
@@ -564,7 +455,6 @@ async def main() -> None:
     bot = RelayBot(
         discord_token=discord_token,
         tts_client=DeepgramTtsClient(api_key=deepgram_api_key),
-        asr_client=DeepgramAsrClient(api_key=deepgram_api_key),
         voice_preferences=PostgresVoicePreferencesRepository(conn=db_pool),
         db_pool=db_pool,
         ffmpeg_executable=ffmpeg_executable,

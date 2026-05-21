@@ -2,10 +2,11 @@
 
 By: Noelle Evanich, Diego Silva, Dana Steinke
 
-TTSTT is a Discord-first accessibility project that bridges text and voice:
+TTSTT is a Discord-first accessibility project that brings **text into voice**:
 
-- **Speech -> Text:** transcribe voice-channel speech into readable text.
-- **Text -> Speech:** read selected users' text messages aloud in voice channels.
+- **Text -> Speech:** read selected users' text messages aloud in voice channels with per-user synthetic voices.
+
+Speech-to-text is not part of the deployable bot today; see [`docs/product-vision.md`](docs/product-vision.md).
 
 ## Current status
 

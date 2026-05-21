@@ -1,16 +1,12 @@
 # Architecture retrospective — TTSTT
 
-## Product vision statement (current)
-**FOR** Discord communities—study servers, hobby groups, accessibility-minded guilds, and teams that already **live in text and voice channels**—**WHO** need **accessible participation**: people who are **hard of hearing or Deaf** and depend on **text for what was said**; people who are **non-verbal** or **prefer typing** and need their words **heard in voice**, not only read in a fast-moving channel; and anyone in **noisy environments** or on **low-quality gear** where **clean listening isn’t reliable**—and who today rely on **manual repeats**, **screenshots**, or **fragmented workarounds** across bots and DMs,
-**THE** **TTSTT** (Text To Speech To Text)
-**IS A** **Discord bot plus companion API** that sits in your **server’s voice and text channels**
-**THAT** turns **spoken contributions** into **postable text** and **reads written chat aloud** in **voice** with **each user’s chosen synthetic voice** (model, pacing, expressiveness, pitch, and speed)—so members who lean on **ears**, **eyes**, or **both** share the **same room** without bolting on a separate captioning product,
-**UNLIKE** using **Discord alone**—where voice doesn’t become durable text by default and long text doesn’t **speak to the VC**—or **unlike** expecting everyone to **migrate** to a single VC stack just to get **basic bridging**,
-**OUR PRODUCT** **meets people on Discord**, uses **slash and chat commands** as the primary interface, and runs **speech AI on infrastructure you control** (API + Postgres) so prefs and processing stay **transparent and tunable** for the community,
-**POWERED BY** **large-model automatic speech recognition** that converts spoken utterances into accurate, postable text **together with** **neural text-to-speech** that renders lines as natural, consistent audio—fast enough to feel usable during **live voice hangs**.
+## Product vision
+
+See [`docs/product-vision.md`](product-vision.md) for the current Moore statement, narrative, and HMW.
 
 ## What has Changed
-Nothing has really shifted in **audience**, **problem**, **key differentiator**, or the **POWERED BY** line since the vision was first committed; our work stayed inside that framing (vendor-agnostic ASR/TTS in the statement, Deepgram in `apps/bot` today).
+
+The deployable bot is now **TTS-only**. We **removed speech-to-text** (voice receive, ASR, transcript posting, and `/stt_*` commands) from `apps/bot`. The product still serves **text → voice** accessibility; we are no longer building **voice → text** in the consolidated bot. **Audience** and **problem** narrow accordingly: Deaf/hard-of-hearing users who need captions are out of scope for this codebase until STT returns. **POWERED BY** is **Deepgram Aura TTS** only (no ASR in the deployable path).
 
 ## Week 4 intended architecture
 
@@ -23,98 +19,142 @@ In Week 4 the team planned a **consolidated, self-hostable stack** where members
 
 ## Decisions that shifted
 
-Two architectural choices diverged from the Week 4 plan during consolidation and Sprint 2 remediations.
+Three architectural choices diverge from the Week 4 plan during consolidation, Sprint 2 remediations, and the **TTS-only** scope cut.
 
-### Deepgram for ASR and TTS (instead of Whisper-class + Piper-class)
+### TTS-only deployable bot (STT removed)
 
-**Context:** Week 4 called for swappable, self-hostable speech AI; in practice Noelle’s spike already proved live voice → Deepgram → text on Discord, and the team needed a single working path in `apps/bot` before splitting containers or running local models. Running Whisper and Piper on operator-controlled infra would have added GPU/hosting work on top of voice-receive debugging and Postgres prefs.
+**Context:** STT required `discord-ext-voice-recv`, Opus ingress handling, utterance buffering, and Deepgram ASR—significant complexity and operator surface for a feature the team is not shipping in the frozen demo path.
 
-**Decision:** Standardize the deployable bot on **Deepgram** for both pre-recorded ASR (`nova-2`) and Aura TTS, behind thin client wrappers in `transcription.py` and `tts.py`, with one `DEEPGRAM_API_KEY`.
+**Decision:** Remove `apps/bot/stt.py`, `apps/bot/transcription.py`, STT slash commands, and the `discord-ext-voice-recv` dependency. The bot connects with standard `discord.py` voice clients for **playback only**.
 
-**Consequences:** The team accepts **vendor lock-in** and **metered API cost** for both directions of the bridge, defers true provider swapping and fully self-hosted inference, and must keep Deepgram SDK/API shape changes in sync—but gains **one credential**, **lower integration surface**, and a path that already matched prototype latency expectations for live hangs.
+**Consequences:** No in-bot captions for voice chat; simpler voice connect/disconnect; smaller dependency tree; red-team and moderation work focuses on **TTS input** only.
 
-**Classification:** **Deliberate and prudent** — a conscious trade of the W4 abstraction story for consolidation speed and a proven integration, not an accidental drift; the team knew self-hosted Whisper/Piper was deferred, not abandoned in principle.
+**Classification:** **Deliberate and prudent** — explicit scope reduction for demo and maintenance, not accidental deletion of unfinished STT.
 
-### Content moderation on STT and TTS paths
+### Deepgram for TTS (instead of Piper-class)
 
-**Context:** Peer red-team review ([`docs/red-team-report-ttstt-received.md`](red-team-report-ttstt-received.md)) showed raw Deepgram transcripts and listened-user TTS going to Discord with no screening—phishing links, slurs, and sensitive speech (self-harm, medical, minor disclosure) could appear in public channels or be read aloud. That gap was not in the Week 4 C4 diagrams.
+**Context:** Week 4 called for swappable, self-hostable speech AI; in practice the team needed a single working TTS path in `apps/bot` before splitting containers or running local models.
 
-**Decision:** Add `apps/bot/content_moderation.py` on the **hot path**: `moderate_for_transcript()` before `channel.send` in `stt.py`, `moderate_for_tts()` before synthesis in `main.py`—URL redaction, regex/heuristic sensitive-content routing to **private DMs** (with 988 copy for self-harm), and optional **OpenAI Moderation API** when `OPENAI_API_KEY` is set.
+**Decision:** Standardize the deployable bot on **Deepgram Aura TTS**, behind a thin client wrapper in `tts.py`, with `DEEPGRAM_API_KEY`.
 
-**Consequences:** Every transcript and TTS enqueue pays **extra latency and logic**; operators may need a **second API key**; pattern lists require maintenance and still do not equal full trust-and-safety—but the bot no longer treats provider output as safe to relay verbatim, and `/join` documents that transcribed speech may be moderated or DMed.
+**Consequences:** The team accepts **vendor lock-in** and **metered API cost** for TTS, defers Piper/self-hosted inference, and must keep Deepgram SDK/API shape changes in sync—but gains **one credential** and a path that already matched prototype latency expectations for live hangs.
 
-**Classification:** **Deliberate and prudent** — driven directly by documented harm scenarios in review, implemented as a focused module rather than bolting checks into Discord handlers ad hoc.
+**Classification:** **Deliberate and prudent** — conscious trade of the W4 abstraction story for consolidation speed; self-hosted Piper remains deferred in principle.
 
-## C4 container diagram (current implementation)
+### Content moderation on the TTS path
 
-This reflects the **deployable** system in `apps/bot` as of today—not the target layout in [`architecture/architecture.md`](../architecture/architecture.md) (no Companion API yet; STT/TTS/moderation/playback run in one process).
+**Context:** Peer red-team review ([`docs/red-team-report-ttstt-received.md`](red-team-report-ttstt-received.md)) showed listened-user TTS could read harmful or sensitive text aloud in public voice. That gap was not in the Week 4 C4 diagrams.
+
+**Decision:** Add `apps/bot/content_moderation.py` on the **hot path**: `moderate_for_tts()` before synthesis in `main.py`—heuristic sensitive-content blocking, link blocking, and optional **OpenAI Moderation API** when `OPENAI_API_KEY` is set.
+
+**Consequences:** Every TTS enqueue pays **extra latency and logic**; operators may need a **second API key**; pattern lists require maintenance and still do not equal full trust-and-safety—but the bot no longer treats chat text as safe to read aloud verbatim, and `/join` documents that listened messages may be screened.
+
+**Classification:** **Deliberate and prudent** — driven by documented harm scenarios in review, implemented as a focused module rather than bolting checks into Discord handlers ad hoc.
+
+## C4 diagrams (current implementation)
+
+These diagrams describe the **deployable** system in `apps/bot` as of today—not the Week 4 target in [`architecture/architecture.md`](../architecture/architecture.md) (no Companion API, no separate audio container, **no STT/ASR**). Use this section as the as-built C4 record for demo and code freeze.
+
+### System Context
+
+The member interacts only through Discord. TTSTT reads listened users’ text, synthesizes speech, and plays audio back into the voice channel. Preferences live in Postgres.
+
+```mermaid
+flowchart LR
+    user["Person: Discord community member<br/>Non-verbal or text-first; uses slash commands and chat"]
+
+    ttstt["Software System: TTSTT<br/>Deployable Discord bot — text to voice only<br/>apps/bot"]
+
+    discord["Software System: Discord Platform<br/>Guild text + voice channels, Gateway, slash commands"]
+
+    deepgram["External System: Deepgram TTS API<br/>Aura voices — DEEPGRAM_API_KEY"]
+
+    pg["External System: PostgreSQL 16<br/>Per-user voice preferences — DATABASE_URL"]
+
+    openai["External System: OpenAI Moderation API<br/>Optional TTS screening — OPENAI_API_KEY"]
+
+    user -->|"Posts text, runs /join and /tts_*"| discord
+    discord -->|"Message events, voice connect, playout"| ttstt
+    ttstt -->|"Synthesized audio in voice channel"| discord
+
+    ttstt -->|"Text + voice parameters"| deepgram
+    deepgram -->|"WAV audio bytes"| ttstt
+
+    ttstt <-->|"Read/write voice prefs"| pg
+
+    ttstt -->|"POST /v1/moderations"| openai
+    openai -->|"Category scores / flags"| ttstt
+```
+
+### Container diagram
+
+One process (`python -m apps.bot.main`) hosts orchestration, TTS, moderation, playback, and persistence. FFmpeg runs as a local subprocess for WAV → PCM decode before Discord playout.
 
 ```mermaid
 flowchart TB
     user["Person: Discord community member"]
 
-    discord["External: Discord Platform<br/>Gateway, REST, voice UDP/WebSocket"]
+    discord["External: Discord Platform<br/>Gateway, REST, voice UDP"]
 
-    pg["External: PostgreSQL 16<br/>Local via infra/docker-compose.yml"]
+    pg["External: PostgreSQL 16<br/>infra/docker-compose.yml"]
 
-    deepgram_asr["External: Deepgram ASR API<br/>listen.v1.media.transcribe_file (nova-2)"]
+    deepgram_tts["External: Deepgram TTS API<br/>tts.py — Aura / speak.v1"]
 
-    deepgram_tts["External: Deepgram TTS API<br/>speak.v1.audio.generate (Aura voices)"]
+    openai_mod["External: OpenAI Moderation API<br/>optional"]
 
-    openai_mod["External: OpenAI Moderation API<br/>optional — OPENAI_API_KEY"]
+    ffmpeg["External: FFmpeg<br/>FFMPEG_EXECUTABLE"]
 
-    ffmpeg["External: FFmpeg binary<br/>local subprocess for PCM decode"]
+    subgraph ttstt["TTSTT — deployable system boundary"]
+        bot["Container: Discord Bot<br/>main.py — RelayBot<br/>discord.py slash + on_message"]
 
-    subgraph ttstt["TTSTT system boundary (deployable)"]
-        bot["Container: Discord Bot<br/>Python — apps/bot<br/>discord.py + discord-ext-voice-recv"]
-
-        subgraph bot_internals["Logical modules (same process)"]
-            stt_mod["STT pipeline<br/>stt.py — voice recv, VAD, WAV, post transcripts"]
-            tts_mod["TTS pipeline<br/>main.py on_message + tts.py"]
-            playback_mod["Playback queue<br/>playback.py"]
-            prefs_mod["Voice preferences<br/>voice_preferences.py + db.py"]
-            mod_mod["Content moderation<br/>content_moderation.py"]
+        subgraph internals["Components — same OS process"]
+            orch["Orchestration<br/>session_registry.py<br/>tts_listener_registry.py<br/>/join /tts_listen_user /tts_voice_*"]
+            mod["Content moderation<br/>content_moderation.py<br/>moderate_for_tts"]
+            tts["TTS synthesis<br/>tts.py — DeepgramTtsClient"]
+            prefs["Voice preferences<br/>voice_preferences.py + db.py"]
+            play["Playback queue<br/>playback.py — PlaybackCoordinator"]
         end
     end
 
-    user -->|"Slash commands, text, voice"| discord
+    user -->|"Commands and chat"| discord
     discord <-->|"Events, messages, voice I/O"| bot
 
-    bot --> stt_mod
-    bot --> tts_mod
-    bot --> playback_mod
-    bot --> prefs_mod
-    bot --> mod_mod
+    bot --> orch
+    bot --> mod
+    bot --> tts
+    bot --> prefs
+    bot --> play
 
-    stt_mod -->|"WAV bytes"| deepgram_asr
-    deepgram_asr -->|"Transcript"| stt_mod
-    stt_mod -->|"channel.send / user.send"| discord
-
-    tts_mod -->|"Reads prefs"| prefs_mod
-    prefs_mod <-->|"asyncpg SQL"| pg
-
-    tts_mod -->|"Text + voice prefs"| deepgram_tts
-    deepgram_tts -->|"WAV bytes"| tts_mod
-    tts_mod -->|"Queued audio"| playback_mod
-
-    mod_mod -->|"POST /v1/moderations"| openai_mod
-    stt_mod --> mod_mod
-    tts_mod --> mod_mod
-
-    playback_mod -->|"FFmpegPCMAudio"| ffmpeg
-    playback_mod -->|"voice_client.play"| discord
+    orch -->|"Control channel + listened user IDs"| tts
+    tts --> mod
+    mod -->|"POST /v1/moderations"| openai_mod
+    tts -->|"Load prefs per guild/user"| prefs
+    prefs <-->|"asyncpg"| pg
+    tts -->|"synthesize_text"| deepgram_tts
+    deepgram_tts -->|"WAV"| tts
+    tts -->|"enqueue"| play
+    play -->|"FFmpegPCMAudio"| ffmpeg
+    play -->|"voice_client.play"| discord
 ```
+
+### Text → speech flow
+
+1. Operator runs `/join` in a text channel and connects the bot to a voice channel (`SessionRegistry` stores the control channel).
+2. Operator runs `/tts_listen_user` for members whose messages should be read aloud (`TtsListenerRegistry`).
+3. A listened user posts in the control channel; `on_message` checks session + listener membership.
+4. `moderate_for_tts()` blocks or allows the line (heuristics + optional OpenAI).
+5. `voice_preferences` loads per-user voice settings from Postgres; `tts.py` calls Deepgram.
+6. `playback.py` decodes WAV via FFmpeg and plays sequentially into the guild voice client.
 
 ### External dependencies and call sites
 
 | System | Role | Env var | Call site |
 |--------|------|---------|-----------|
-| Discord Platform | Gateway, commands, text/voice I/O | `DISCORD_TOKEN` | `apps/bot/main.py` (`bot.start`, voice connect, `on_message`); `apps/bot/stt.py` (transcript posts); `apps/bot/playback.py` (`voice_client.play`) |
-| PostgreSQL | TTS voice preferences | `DATABASE_URL` | `apps/bot/db.py`, `apps/bot/voice_preferences.py` |
-| Deepgram ASR | Speech-to-text | `DEEPGRAM_API_KEY` | `apps/bot/transcription.py` ← `apps/bot/stt.py` |
-| Deepgram TTS | Text-to-speech | `DEEPGRAM_API_KEY` | `apps/bot/tts.py` ← `apps/bot/main.py` |
-| OpenAI Moderation | Optional content safety | `OPENAI_API_KEY` | `apps/bot/content_moderation.py` ← `main.py`, `stt.py` |
-| FFmpeg | WAV → PCM for voice playback | `FFMPEG_EXECUTABLE` | `apps/bot/playback.py` |
+| Discord Platform | Gateway, slash commands, text events, voice connect/play | `DISCORD_TOKEN` | `apps/bot/main.py`; `apps/bot/playback.py` |
+| PostgreSQL | Per-guild/user TTS voice prefs | `DATABASE_URL` | `apps/bot/db.py`, `apps/bot/voice_preferences.py` |
+| Deepgram TTS | Text-to-speech synthesis | `DEEPGRAM_API_KEY` | `apps/bot/tts.py` ← `apps/bot/main.py` |
+| OpenAI Moderation | Optional TTS input screening | `OPENAI_API_KEY` | `apps/bot/content_moderation.py` ← `main.py` |
+| FFmpeg | WAV → PCM for `FFmpegPCMAudio` | `FFMPEG_EXECUTABLE` | `apps/bot/playback.py` |
 
 ## Code freeze
 
@@ -124,13 +164,12 @@ Short list of debt the team is carrying into freeze and demo night. Fowler quadr
 
 | Debt item | Quadrant | Before freeze or through demo? |
 |-----------|----------|--------------------------------|
-| **Monolithic bot** — STT, TTS, moderation, playback, and prefs in one `apps/bot` process; no Companion API or separate audio container from Week 4. | Deliberate, prudent | **Live with it** through demo night; splitting containers is post-demo scope. |
-| **Deepgram-only speech stack** — ASR/TTS interfaces exist but only Deepgram is wired; self-hosted Whisper/Piper and provider swap remain on paper. | Deliberate, prudent | **Live with it**; demo runs on one API key and known latency. |
-| **Unpinned `discord-ext-voice-recv` from GitHub HEAD** — supply-chain risk flagged in peer red-team ([Finding 1.1](red-team-report-ttstt-received.md)). | Inadvertent, reckless | **Pin to a tag or commit SHA before freeze if time allows**; otherwise document the pin as the first post-demo chore and accept HEAD risk for demo installs only. |
-| **Agent debug logging in `transcription.py` / `stt.py`** — writes to a developer-local `.cursor/debug-*.log` path on the STT hot path. | Inadvertent, reckless | **Remove before code freeze**; it is not operator-facing telemetry and should not ship in the frozen branch. |
-| **Moderation is heuristic + optional OpenAI** — not a full trust-and-safety pipeline; regex/DM routing can miss edge cases. | Deliberate, prudent | **Live with it** for demo; expand coverage after freeze if the course allows. |
-| **`architecture/architecture.md` still describes the W4 target** (Companion API, Whisper/Piper) while `apps/bot` is the as-built system. | Inadvertent, prudent | **Light doc sync if time** (cross-link this retrospective); otherwise **live with it** and treat this file as the as-built record for W10. |
+| **Monolithic bot** — TTS, moderation, playback, and prefs in one `apps/bot` process; no Companion API or separate audio container from Week 4. | Deliberate, prudent | **Live with it** through demo night; splitting containers is post-demo scope. |
+| **Deepgram-only TTS** — provider interface exists but only Deepgram is wired; self-hosted Piper and provider swap remain on paper. | Deliberate, prudent | **Live with it**; demo runs on one API key and known latency. |
+| **No STT / captions** — voice → text removed from `apps/bot`; W4 vision and accessibility story for Deaf users is not met by the deployable bot. | Deliberate, prudent | **Accepted** for demo scope; reintroduce only if product direction returns. |
+| **Moderation is heuristic + optional OpenAI** — not a full trust-and-safety pipeline; regex blocking can miss edge cases. | Deliberate, prudent | **Live with it** for demo; expand coverage after freeze if the course allows. |
+| **`architecture/architecture.md` still describes the W4 target** (Companion API, Whisper/Piper, bidirectional bridge). As-built C4 for the deployable bot lives in **this file** (System Context + Container above). | Inadvertent, prudent | **Live with it** for W4 submission artifact; use this retrospective for current diagrams. |
 
 ### With another sprint
 
-If the team had one more sprint before demo, it would **stand up the Companion API and pinned provider boundaries first, pin `discord-ext-voice-recv` and run automated live voice/STT checks in CI, then consolidate prototypes**—so demo week spends time on accessibility polish and operator docs instead of monolith glue and supply-chain surprises.
+If the team had one more sprint before demo, it would **stand up the Companion API and pinned provider boundaries first, then consolidate prototypes**—so demo week spends time on TTS accessibility polish and operator docs instead of monolith glue. **STT is out of current scope** unless the product vision is reopened.
