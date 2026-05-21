@@ -1,0 +1,4 @@
+# Static help site for Discord /help — https://docs.netlify.com/configure-builds/file-based-configuration/
+[build]
+  publish = "docs/help"
+  command = ""

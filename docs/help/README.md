@@ -4,30 +4,28 @@ Static help guide hosted on **Netlify** for the `/help` Discord slash command.
 
 ## Public URL
 
-Use the URL from your Netlify site dashboard (e.g. `https://your-site-name.netlify.app/`).
+Copy the URL from your Netlify site dashboard (e.g. `https://your-site-name.netlify.app/`) and set it as `HELP_URL` in the bot `.env` (see [`apps/bot/.env.example`](../../apps/bot/.env.example)).
 
-Set that exact URL as `HELP_URL` in the bot environment (see [`apps/bot/.env.example`](../../apps/bot/.env.example)).
+## Deploy on Netlify (Git-connected)
 
-## Deploy on Netlify
+This repo includes [`netlify.toml`](../../netlify.toml) at the root so Netlify publishes `docs/help/` automatically—no build step.
 
-### Option A — Connect this GitHub repo (recommended)
+1. [app.netlify.com](https://app.netlify.com) → **Add new site** → **Import an existing project** → GitHub → this repo.
+2. Netlify should detect `netlify.toml` and set **Publish directory** to `docs/help`. If not, set it manually.
+3. **Deploy site**, then copy the live URL into `HELP_URL` on the bot host and restart the bot.
 
-1. Sign in at [app.netlify.com](https://app.netlify.com) → **Add new site** → **Import an existing project** → GitHub → select this repo.
-2. Build settings:
-   - **Base directory:** `docs/help` (if Netlify asks for the folder that contains `index.html`)
-   - **Build command:** leave empty
-   - **Publish directory:** `.` (when base is `docs/help`) or `docs/help` (if base is repo root)
-3. **Deploy site**. Copy the generated URL and set `HELP_URL` on the bot host.
+Pushes to the connected branch trigger new deploys.
 
-Pushes to the connected branch redeploy automatically.
+## Manual upload (optional)
 
-### Option B — Manual upload (no Git hookup)
+[app.netlify.com/drop](https://app.netlify.com/drop) → drag this `docs/help` folder. Re-upload after HTML/CSS changes.
 
-1. Open [app.netlify.com/drop](https://app.netlify.com/drop).
-2. Drag this `docs/help` folder onto the page.
-3. Use the URL Netlify gives you for `HELP_URL`.
+## Verify the deploy
 
-Re-upload after you change `index.html` or `styles.css`.
+1. In Netlify: **Deploys** → latest deploy should be **Published**.
+2. Open the site URL in a browser; you should see **TTSTT Help** and the command tables.
+3. Confirm `styles.css` loads (page is styled, not plain unstyled HTML).
+4. Set the same URL in bot `.env` as `HELP_URL` and run `/help` in Discord.
 
 ## Local preview
 
@@ -37,7 +35,3 @@ python -m http.server 8080
 ```
 
 Then visit http://localhost:8080/
-
-## Note on GitHub Pages
-
-The workflow [`.github/workflows/pages.yml`](../../.github/workflows/pages.yml) is optional and only needed if the org enables GitHub Pages later. Netlify is the supported host for this site.
