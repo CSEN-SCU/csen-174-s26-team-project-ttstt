@@ -1,8 +1,14 @@
 # Architecture retrospective — TTSTT
 
-## Product vision
-
-See [`docs/product-vision.md`](product-vision.md) for the current Moore statement, narrative, and HMW.
+## Product vision statement (current)
+**FOR** Discord communities, accessibility-minded guilds, and teams that already live in text and voice channels
+**WHO** need accessible participation from people who are hard of hearing or Deaf and anyone in noisy environments or on low-quality gear where clean speech isn’t reliable
+**TTSTT** (Text To Speech To Text)
+**IS A** is a Discord bot that sits in your server’s voice and text channels
+**THAT** reads written chat aloud in voice with each user’s chosen synthetic voice (model, pacing, expressiveness, pitch, and speed)
+**UNLIKE** using Discord alone, long text doesn’t speak to the VC, or unlike expecting everyone to migrate to a single VC stack just to get basic bridging,
+**OUR PRODUCT** meets people on Discord, uses slash and chat commands as the primary interface, and runs speech AI on infrastructure you control (API + Postgres)
+**POWERED BY** neural text-to-speech that renders lines as natural, consistent audio, fast enough to feel usable during live voice hangs.
 
 ## What has Changed
 
