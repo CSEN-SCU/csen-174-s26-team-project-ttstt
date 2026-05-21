@@ -28,7 +28,13 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger("ttstt-bot")
 
 MAX_TTS_CHARS = 300
-DEFAULT_HELP_URL = "https://csen-scu.github.io/csen-174-s26-team-project-ttstt/"
+
+
+def _normalize_help_url(url: str) -> str:
+    cleaned = url.strip()
+    if not cleaned.startswith(("http://", "https://")):
+        raise RuntimeError("HELP_URL must start with http:// or https://")
+    return cleaned if cleaned.endswith("/") else f"{cleaned}/"
 
 
 def _should_enqueue_message(
@@ -54,8 +60,8 @@ class RelayBot(commands.Bot):
         voice_preferences: PostgresVoicePreferencesRepository,
         db_pool: object,
         ffmpeg_executable: str,
+        help_url: str,
         openai_api_key: str | None = None,
-        help_url: str = DEFAULT_HELP_URL,
     ) -> None:
         intents = discord.Intents.default()
         intents.guilds = True
@@ -471,13 +477,19 @@ async def main() -> None:
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
     database_url = os.getenv("DATABASE_URL")
     ffmpeg_executable = os.getenv("FFMPEG_EXECUTABLE", "ffmpeg")
-    help_url = os.getenv("HELP_URL", DEFAULT_HELP_URL)
+    help_url_raw = os.getenv("HELP_URL", "").strip()
     if not discord_token:
         raise RuntimeError("DISCORD_TOKEN must be set in .env.")
     if not deepgram_api_key:
         raise RuntimeError("DEEPGRAM_API_KEY must be set in .env.")
     if not database_url:
         raise RuntimeError("DATABASE_URL must be set in .env.")
+    if not help_url_raw:
+        raise RuntimeError(
+            "HELP_URL must be set in .env to your Netlify help site URL "
+            "(see docs/help/README.md)."
+        )
+    help_url = _normalize_help_url(help_url_raw)
 
     db_pool = await create_postgres_pool(database_url=database_url)
     bot = RelayBot(
