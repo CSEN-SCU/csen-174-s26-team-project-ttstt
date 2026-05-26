@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import inspect
+import re
 from typing import Mapping, Protocol
+
+_URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
 
 
 class TtsSynthesisError(RuntimeError):
@@ -13,6 +16,38 @@ class TtsSynthesisError(RuntimeError):
 class TtsClient(Protocol):
     def synthesize(self, text: str, voice_prefs: Mapping[str, object]) -> bytes:
         ...
+
+
+def preprocess_text_for_tts(text: str) -> str:
+    """Strip URLs and collapse whitespace before synthesis."""
+    without_urls = _URL_PATTERN.sub("", text)
+    return " ".join(without_urls.split()).strip()
+
+
+def split_text_for_progressive_tts(
+    text: str,
+    *,
+    first_chunk_chars: int,
+    max_chars: int,
+) -> list[str]:
+    """Split text so the first chunk is smaller for lower time-to-first-audio."""
+    normalized = " ".join(text.split()).strip()
+    if not normalized:
+        return []
+
+    first_chunks = chunk_text_for_tts(normalized, first_chunk_chars)
+    if not first_chunks:
+        return []
+
+    first = first_chunks[0]
+    if len(first_chunks) == 1:
+        return first_chunks
+
+    remainder = normalized[len(first) :].lstrip()
+    if not remainder:
+        return [first]
+
+    return [first, *chunk_text_for_tts(remainder, max_chars)]
 
 
 def chunk_text_for_tts(text: str, max_chars: int) -> list[str]:

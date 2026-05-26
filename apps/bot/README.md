@@ -5,11 +5,12 @@ commanded text-to-speech listener support.
 
 ## Current Commands
 
-- `/help` - Link to the public help guide (GitHub Pages).
+- `/help` - Link to the public help guide (Netlify).
 - `/join` - Join the command invoker's current voice channel.
 - `/leave` - Disconnect from voice in the current server.
 - `/status` - Report current voice connection status for the server.
 - `/tts_listen_user <user>` - Start reading text messages from a selected user in the control channel.
+- `/tts_stop_listening` - Stop reading your own messages.
 - `/tts_stop_listening_user <user>` - Stop reading one selected user's messages.
 - `/tts_stop_all_listeners` - Stop reading all configured users in the server.
 - `/tts_provider_set` - Choose **Deepgram Aura** (cloud) or **Piper** (local ONNX voices) for your TTS in this server.
@@ -17,7 +18,7 @@ commanded text-to-speech listener support.
 - `/tts_voice_show` - Show your saved TTS settings for the current server.
 - `/tts_voice_reset` - Reset your TTS settings to defaults for the current server.
 
-Public help site: https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ (see [`docs/help`](../../docs/help)).
+Public help site: hosted on Netlify (see [`docs/help`](../../docs/help)); set `HELP_URL` in `.env` to your Netlify URL.
 
 ## Requirements
 
@@ -56,7 +57,7 @@ Public help site: https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ (s
    - Optional Piper (local TTS): `PIPER_MODEL_DIR`, `PIPER_EXECUTABLE`, `PIPER_DEFAULT_VOICE`
    - Optional: `FFMPEG_EXECUTABLE` (defaults to `ffmpeg`; used for Discord playback and Piper pitch shift)
    - Optional: `OPENAI_API_KEY` (enables OpenAI Moderation API checks on TTS text)
-   - Optional: `HELP_URL` (defaults to the GitHub Pages help site for `/help`)
+   - `HELP_URL` (your Netlify help site URL; required for `/help`)
 
    **Piper setup:** Install [piper](https://github.com/rhasspy/piper) and download voice `.onnx` (+ `.json`) files into `PIPER_MODEL_DIR`. Set `PIPER_DEFAULT_VOICE` to the model basename you installed (e.g. `en_US-libritts_r-medium`); that value is used when you run `/tts_provider_set` → Piper and for synthesis when no per-user voice is saved. Then optionally refine with `/tts_voice_set voice:<basename>`.
 
@@ -124,4 +125,4 @@ CMD ["python", "-m", "apps.bot.main"]
 
 Set `DISCORD_TOKEN` in your runtime environment/secrets manager.
 Also set `DEEPGRAM_API_KEY` and `DATABASE_URL`.
-Optional: `HELP_URL` for the `/help` command link.
+Required: `HELP_URL` — your Netlify help site URL for `/help`.

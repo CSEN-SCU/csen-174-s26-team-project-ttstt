@@ -13,12 +13,12 @@ Speech-to-text is not part of the deployable bot today; see [`docs/product-visio
 This repository contains a working deployable Discord bot at [`apps/bot`](apps/bot):
 
 - Voice control commands: `/join`, `/leave`, `/status`
-- TTS listener controls: `/tts_listen_user`, `/tts_stop_listening_user`, `/tts_stop_all_listeners`
+- TTS listener controls: `/tts_listen_user`, `/tts_stop_listening`
 - Per-user voice preferences (Postgres-backed): `/tts_voice_set`, `/tts_voice_show`, `/tts_voice_reset`
 
 See [`apps/bot/README.md`](apps/bot/README.md) for setup and usage.
 
-**Help guide (public):** https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ — also linked from `/help` in Discord.
+**Help guide (public):** hosted on Netlify — see [`docs/help`](docs/help); linked from `/help` in Discord (`HELP_URL` in bot `.env`).
 
 ## Repository layout
 
@@ -43,6 +43,7 @@ Required env vars in `.env`:
 - `DISCORD_TOKEN`
 - `DEEPGRAM_API_KEY`
 - `DATABASE_URL`
+- `HELP_URL` (your Netlify help site URL)
 - Optional: `FFMPEG_EXECUTABLE` (defaults to `ffmpeg`)
 
 Before first run, create the Postgres table:

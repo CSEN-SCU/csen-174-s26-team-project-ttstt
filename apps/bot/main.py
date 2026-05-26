@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import Awaitable
 
 import discord
 from discord import app_commands
@@ -32,7 +33,47 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger("ttstt-bot")
 
 MAX_TTS_CHARS = 300
-DEFAULT_HELP_URL = "https://csen-scu.github.io/csen-174-s26-team-project-ttstt/"
+
+
+class GuildMessageSerializer:
+    """Run per-guild message handlers sequentially to avoid overlapping TTS work."""
+
+    def __init__(self) -> None:
+        self._locks: dict[int, asyncio.Lock] = {}
+
+    def _lock_for(self, guild_id: int) -> asyncio.Lock:
+        return self._locks.setdefault(guild_id, asyncio.Lock())
+
+    async def run(self, guild_id: int, coro: Awaitable[None]) -> None:
+        async with self._lock_for(guild_id):
+            await coro
+
+
+def _build_help_text() -> str:
+    return (
+        "TTSTT slash commands:\n"
+        "/join — join your voice channel\n"
+        "/leave — disconnect from voice\n"
+        "/status — show voice connection status\n"
+        "/tts_listen_user — start reading a user's messages (use in the control text channel)\n"
+        "/tts_stop_listening — stop reading your own messages\n"
+        "/tts_stop_listening_user — stop reading a chosen user's messages\n"
+        "/tts_stop_all_listeners — stop reading everyone in this server\n"
+        "/tts_provider_set — choose Deepgram or Piper for your voice\n"
+        "/tts_voice_set — set your TTS voice (speed: 0.5 to 2.0, pitch: -20 to 20)\n"
+        "/tts_voice_show — show your saved voice settings\n"
+        "/tts_voice_reset — reset your voice settings to defaults\n"
+        "/help — open the full help guide\n"
+        "\n"
+        "Run /join in the control text channel where you want TTS messages read from."
+    )
+
+
+def _normalize_help_url(url: str) -> str:
+    cleaned = url.strip()
+    if not cleaned.startswith(("http://", "https://")):
+        raise RuntimeError("HELP_URL must start with http:// or https://")
+    return cleaned if cleaned.endswith("/") else f"{cleaned}/"
 
 
 def _should_enqueue_message(
@@ -60,8 +101,8 @@ class RelayBot(commands.Bot):
         voice_preferences: PostgresVoicePreferencesRepository,
         db_pool: object,
         ffmpeg_executable: str,
+        help_url: str,
         openai_api_key: str | None = None,
-        help_url: str = DEFAULT_HELP_URL,
     ) -> None:
         intents = discord.Intents.default()
         intents.guilds = True
@@ -85,6 +126,7 @@ class RelayBot(commands.Bot):
         self.tree.add_command(leave_voice)
         self.tree.add_command(bot_status)
         self.tree.add_command(tts_listen_user)
+        self.tree.add_command(tts_stop_listening)
         self.tree.add_command(tts_stop_listening_user)
         self.tree.add_command(tts_stop_all_listeners)
         self.tree.add_command(tts_provider_set)
@@ -352,38 +394,86 @@ async def tts_listen_user(interaction: discord.Interaction, user: discord.Member
     await interaction.response.send_message(f"Now listening to {user.mention} in this channel.", ephemeral=True)
 
 
-@app_commands.command(name="tts_stop_listening_user", description="Stop reading messages from this user.")
-@app_commands.describe(user="User to remove from TTS listening")
+@app_commands.command(name="tts_stop_listening", description="Stop reading your messages aloud in voice.")
+async def tts_stop_listening(interaction: discord.Interaction) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None or interaction.user is None:
+        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+        return
+
+    removed = bot.listeners.remove(guild_id=interaction.guild.id, user_id=interaction.user.id)
+    if not removed:
+        await interaction.response.send_message("You are not currently being listened to.", ephemeral=True)
+        return
+    await interaction.response.send_message("Stopped listening to your messages.", ephemeral=True)
+
+
+@app_commands.command(
+    name="tts_stop_listening_user",
+    description="Stop reading messages from a selected user in this channel.",
+)
+@app_commands.describe(user="User to stop reading aloud")
 async def tts_stop_listening_user(interaction: discord.Interaction, user: discord.Member) -> None:
     bot = interaction.client
     assert isinstance(bot, RelayBot)
 
-    if interaction.guild is None:
-        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+    if interaction.guild is None or not isinstance(interaction.channel, discord.TextChannel):
+        await interaction.response.send_message("Use this command in a guild text channel.", ephemeral=True)
+        return
+
+    voice_client = interaction.guild.voice_client
+    if voice_client is None or not voice_client.is_connected():
+        await interaction.response.send_message("Run `/join` first so I am connected to voice.", ephemeral=True)
+        return
+
+    control_channel_id = bot.sessions.get(interaction.guild.id)
+    if control_channel_id != interaction.channel.id:
+        await interaction.response.send_message(
+            "Use this command in the current control text channel (run `/join` here if needed).",
+            ephemeral=True,
+        )
         return
 
     removed = bot.listeners.remove(guild_id=interaction.guild.id, user_id=user.id)
     if not removed:
-        await interaction.response.send_message(f"{user.mention} is not currently being listened to.", ephemeral=True)
+        await interaction.response.send_message(f"I was not listening to {user.mention}.", ephemeral=True)
         return
     await interaction.response.send_message(f"Stopped listening to {user.mention}.", ephemeral=True)
 
 
-@app_commands.command(name="tts_stop_all_listeners", description="Stop reading messages from all users in this server.")
+@app_commands.command(
+    name="tts_stop_all_listeners",
+    description="Stop reading all configured users in this server.",
+)
 async def tts_stop_all_listeners(interaction: discord.Interaction) -> None:
     bot = interaction.client
     assert isinstance(bot, RelayBot)
 
-    if interaction.guild is None:
-        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+    if interaction.guild is None or not isinstance(interaction.channel, discord.TextChannel):
+        await interaction.response.send_message("Use this command in a guild text channel.", ephemeral=True)
         return
 
-    cleared = bot.listeners.clear(interaction.guild.id)
-    bot.playback.clear_guild(interaction.guild.id)
-    await interaction.response.send_message(
-        f"Stopped listening to {len(cleared)} user(s) in this server.",
-        ephemeral=True,
-    )
+    voice_client = interaction.guild.voice_client
+    if voice_client is None or not voice_client.is_connected():
+        await interaction.response.send_message("Run `/join` first so I am connected to voice.", ephemeral=True)
+        return
+
+    control_channel_id = bot.sessions.get(interaction.guild.id)
+    if control_channel_id != interaction.channel.id:
+        await interaction.response.send_message(
+            "Use this command in the current control text channel (run `/join` here if needed).",
+            ephemeral=True,
+        )
+        return
+
+    before = bot.listeners.list_users(interaction.guild.id)
+    if not before:
+        await interaction.response.send_message("No users are being listened to right now.", ephemeral=True)
+        return
+    bot.listeners.clear(interaction.guild.id)
+    await interaction.response.send_message("Stopped listening to all users in this channel.", ephemeral=True)
 
 
 @app_commands.command(
@@ -612,11 +702,17 @@ async def main() -> None:
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
     database_url = os.getenv("DATABASE_URL")
     ffmpeg_executable = os.getenv("FFMPEG_EXECUTABLE", "ffmpeg")
-    help_url = os.getenv("HELP_URL", DEFAULT_HELP_URL)
+    help_url_raw = os.getenv("HELP_URL", "").strip()
     if not discord_token:
         raise RuntimeError("DISCORD_TOKEN must be set in .env.")
     if not database_url:
         raise RuntimeError("DATABASE_URL must be set in .env.")
+    if not help_url_raw:
+        raise RuntimeError(
+            "HELP_URL must be set in .env to your Netlify help site URL "
+            "(see docs/help/README.md)."
+        )
+    help_url = _normalize_help_url(help_url_raw)
 
     tts_deepgram, tts_piper = _build_tts_clients(
         deepgram_api_key=deepgram_api_key,
@@ -628,17 +724,18 @@ async def main() -> None:
         )
 
     db_pool = await create_postgres_pool(database_url=database_url)
-    bot = RelayBot(
-        discord_token=discord_token,
-        tts_deepgram=tts_deepgram,
-        tts_piper=tts_piper,
-        voice_preferences=PostgresVoicePreferencesRepository(conn=db_pool),
-        db_pool=db_pool,
-        ffmpeg_executable=ffmpeg_executable,
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
-        help_url=help_url,
-    )
+    bot: RelayBot | None = None
     try:
+        bot = RelayBot(
+            discord_token=discord_token,
+            tts_deepgram=tts_deepgram,
+            tts_piper=tts_piper,
+            voice_preferences=PostgresVoicePreferencesRepository(conn=db_pool),
+            db_pool=db_pool,
+            ffmpeg_executable=ffmpeg_executable,
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
+            help_url=help_url,
+        )
         await bot.start(bot.discord_token)
     except discord.errors.PrivilegedIntentsRequired as exc:
         raise RuntimeError(
@@ -646,8 +743,15 @@ async def main() -> None:
             "for this application, then restart the bot."
         ) from exc
     finally:
-        if not bot.is_closed():
-            await bot.close()
+        if bot is not None:
+            if not bot.is_closed():
+                await bot.close()
+        else:
+            maybe_close = getattr(db_pool, "close", None)
+            if callable(maybe_close):
+                close_result = maybe_close()
+                if asyncio.iscoroutine(close_result):
+                    await close_result
 
 
 if __name__ == "__main__":

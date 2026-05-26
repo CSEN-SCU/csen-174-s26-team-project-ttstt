@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="TTSTT help: Discord bot commands, quick start, privacy, and troubleshooting."
+      content="TTSTT help: Discord text-to-speech bot commands, quick start, privacy, and troubleshooting."
     />
     <title>TTSTT Help</title>
     <link rel="stylesheet" href="styles.css" />
@@ -15,8 +15,8 @@
       <header>
         <h1>TTSTT Help</h1>
         <p class="tagline">
-          Text To Speech To Text bridges voice and text in Discord: transcribe speech to
-          readable messages, and read selected users' chat aloud in voice channels.
+          TTSTT reads selected users' text messages aloud in your Discord voice channel, with
+          per-user synthetic voices—so text-first members can be heard in voice.
         </p>
         <a
           class="btn"
@@ -42,21 +42,13 @@
           run <code>/join</code> becomes the control channel for that server.
         </p>
 
-        <h3>Text-to-speech (read chat in voice)</h3>
         <ol class="steps">
           <li>Join a voice channel, then run <code>/join</code> in the text channel you want to use.</li>
           <li>Run <code>/tts_listen_user</code> and pick whose messages should be read aloud.</li>
-          <li>Those users post in the <strong>same text channel</strong>; the bot speaks in voice.</li>
-          <li>Optional: <code>/tts_voice_set</code> to customize your synthetic voice per server.</li>
-          <li>Run <code>/tts_stop_listening_user</code> or <code>/tts_stop_all_listeners</code> when done.</li>
-        </ol>
-
-        <h3>Speech-to-text (voice to text)</h3>
-        <ol class="steps">
-          <li>Run <code>/join</code> from your control text channel (same as above).</li>
-          <li>Run <code>/stt_listen_user</code> for each speaker you want transcribed.</li>
-          <li>When they speak in voice, transcripts appear in the control text channel.</li>
-          <li>Run <code>/stt_stop_listening_user</code> or <code>/stt_stop_all_listeners</code> to stop.</li>
+          <li>Those users post in the <strong>same text channel</strong>; the bot speaks their messages in voice.</li>
+          <li>Optional: <code>/tts_voice_set</code> to customize your synthetic voice per server (use style <code>none</code> to clear style).</li>
+          <li>Run <code>/tts_stop_listening</code> when you no longer want your messages read aloud.</li>
+          <li>Run <code>/leave</code> when the bot should disconnect from voice.</li>
         </ol>
 
         <p>
@@ -82,7 +74,7 @@
             </tr>
             <tr>
               <td><code>/leave</code></td>
-              <td>Disconnect from voice and clear listeners for this server.</td>
+              <td>Disconnect from voice and clear TTS listeners for this server.</td>
             </tr>
             <tr>
               <td><code>/status</code></td>
@@ -109,36 +101,8 @@
               <td>Start reading a user's messages from the control channel aloud in voice.</td>
             </tr>
             <tr>
-              <td><code>/tts_stop_listening_user</code></td>
-              <td>Stop reading one user.</td>
-            </tr>
-            <tr>
-              <td><code>/tts_stop_all_listeners</code></td>
-              <td>Stop reading all configured users in this server.</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <h3>Speech-to-text (STT)</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Command</th>
-              <th>What it does</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>/stt_listen_user</code></td>
-              <td>Transcribe a user's voice into the control text channel.</td>
-            </tr>
-            <tr>
-              <td><code>/stt_stop_listening_user</code></td>
-              <td>Stop transcribing one user.</td>
-            </tr>
-            <tr>
-              <td><code>/stt_stop_all_listeners</code></td>
-              <td>Stop transcribing all users in this server.</td>
+              <td><code>/tts_stop_listening</code></td>
+              <td>Stop reading your messages from the control channel aloud in voice.</td>
             </tr>
           </tbody>
         </table>
@@ -155,7 +119,8 @@
             <tr>
               <td><code>/tts_voice_set</code></td>
               <td>
-                Set Deepgram voice/model, speed (0.5–2.0), pitch (−20–20), and optional style.
+                Set Deepgram voice/model, speed (0.5–2.0), pitch (−20–20), and optional style (use
+                <code>none</code> to clear style). Omit fields you do not want to change.
               </td>
             </tr>
             <tr>
@@ -173,28 +138,22 @@
       <section id="privacy">
         <h2>Privacy &amp; safety</h2>
         <div class="note">
-          <strong>Before you use TTSTT:</strong> Voice and text in your server may be sent to
-          speech AI providers for transcription and synthesis. Only add the bot where members
-          understand and consent.
+          <strong>Before you use TTSTT:</strong> Text from listened users may be sent to speech AI
+          services for synthesis. Only add the bot where members understand and consent.
         </div>
 
         <ul>
           <li>
-            <code>/join</code> explains that STT and TTS may process user content in the server.
-          </li>
-          <li>
-            <strong>STT:</strong> Transcripts matching self-harm, medical, or minor-disclosure
-            patterns are not posted publicly; the speaker may receive a private DM (including a
-            988 crisis line reference for self-harm matches). <code>http://</code> and
-            <code>https://</code> URLs are replaced with <code>[link removed]</code> in public posts.
+            <code>/join</code> warns that text from users you add with <code>/tts_listen_user</code>
+            may be read aloud in voice after content safety checks.
           </li>
           <li>
             <strong>TTS:</strong> Listened messages with sensitive content or links are not
             synthesized or played in voice.
           </li>
           <li>
-            Set <code>OPENAI_API_KEY</code> on the bot host for additional hate, harassment, and
-            violence screening via OpenAI's Moderation API (operator configuration, not end-user).
+            Server operators can set <code>OPENAI_API_KEY</code> on the bot host for additional
+            hate, harassment, and violence screening via OpenAI's Moderation API.
           </li>
         </ul>
       </section>
@@ -209,10 +168,10 @@
             after code updates.
           </dd>
 
-          <dt><code>/join</code> fails or the bot never hears voice</dt>
+          <dt><code>/join</code> fails</dt>
           <dd>
-            The bot needs <strong>Connect</strong>, <strong>Speak</strong>, and
-            <strong>View Channel</strong> in the voice channel. In the
+            Join a voice channel first. The bot needs <strong>Connect</strong>, <strong>Speak</strong>,
+            and <strong>View Channel</strong> in that voice channel. In the
             <a href="https://discord.com/developers/applications">Discord Developer Portal</a>,
             enable <strong>Guilds</strong>, <strong>Voice States</strong>, and
             <strong>Message Content</strong> privileged intents for the application.
@@ -223,13 +182,6 @@
             Run <code>/join</code> in the text channel you want to use, then
             <code>/tts_listen_user</code> for your account. Messages must be posted in that same
             control channel while the bot is connected to voice.
-          </dd>
-
-          <dt>STT does not post transcripts</dt>
-          <dd>
-            Run <code>/join</code>, then <code>/stt_listen_user</code> for the speaker. They must be
-            unmuted and speaking in the voice channel the bot joined. Sensitive speech may be DMed
-            instead of posted publicly.
           </dd>
 
           <dt>Voice sounds broken or the bot crashes in voice</dt>

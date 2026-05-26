@@ -1,26 +1,33 @@
 # TTSTT public help site
 
-Static help guide deployed to GitHub Pages for the `/help` Discord slash command.
+Static help guide hosted on **Netlify** for the `/help` Discord slash command.
 
 ## Public URL
 
-After the first successful deploy on `main`:
+Copy the URL from your Netlify site dashboard (e.g. `https://your-site-name.netlify.app/`) and set it as `HELP_URL` in the bot `.env` (see [`apps/bot/.env.example`](../../apps/bot/.env.example)).
 
-**https://csen-scu.github.io/csen-174-s26-team-project-ttstt/**
+## Deploy on Netlify (Git-connected)
 
-Set the same value as `HELP_URL` in the bot environment (see [`apps/bot/.env.example`](../../apps/bot/.env.example)).
+This repo includes [`netlify.toml`](../../netlify.toml) at the root so Netlify publishes `docs/help/` automatically—no build step.
 
-## One-time GitHub setup
+1. [app.netlify.com](https://app.netlify.com) → **Add new site** → **Import an existing project** → GitHub → this repo.
+2. Netlify should detect `netlify.toml` and set **Publish directory** to `docs/help`. If not, set it manually.
+3. **Deploy site**, then copy the live URL into `HELP_URL` on the bot host and restart the bot.
 
-1. Repo **Settings → Pages**
-2. **Build and deployment → Source:** GitHub Actions
-3. Merge to `main` (or run the **Deploy help site** workflow manually)
+Pushes to the connected branch trigger new deploys.
 
-The workflow [`.github/workflows/pages.yml`](../../.github/workflows/pages.yml) publishes everything under `docs/help/`.
+## Manual upload (optional)
+
+[app.netlify.com/drop](https://app.netlify.com/drop) → drag this `docs/help` folder. Re-upload after HTML/CSS changes.
+
+## Verify the deploy
+
+1. In Netlify: **Deploys** → latest deploy should be **Published**.
+2. Open the site URL in a browser; you should see **TTSTT Help** and the command tables.
+3. Confirm `styles.css` loads (page is styled, not plain unstyled HTML).
+4. Set the same URL in bot `.env` as `HELP_URL` and run `/help` in Discord.
 
 ## Local preview
-
-Open `index.html` in a browser, or serve the folder:
 
 ```bash
 cd docs/help
