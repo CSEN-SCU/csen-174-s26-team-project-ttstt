@@ -12,6 +12,7 @@ commanded text-to-speech listener support.
 - `/tts_listen_user <user>` - Start reading text messages from a selected user in the control channel.
 - `/tts_stop_listening_user <user>` - Stop reading one selected user's messages.
 - `/tts_stop_all_listeners` - Stop reading all configured users in the server.
+- `/tts_provider_set` - Choose **Deepgram Aura** (cloud) or **Piper** (local ONNX voices) for your TTS in this server.
 - `/tts_voice_set` - Set your own TTS voice/model, speed, pitch, and style for the current server (partial updates; use style `none` to clear).
 - `/tts_voice_show` - Show your saved TTS settings for the current server.
 - `/tts_voice_reset` - Reset your TTS settings to defaults for the current server.
@@ -23,7 +24,7 @@ Public help site: https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ (s
 - Python 3.11+
 - FFmpeg + Opus runtime available for Discord voice
 - Discord bot token with Guilds, Voice States, and Message Content intents enabled
-- Deepgram API key
+- At least one TTS backend: **Deepgram API key** and/or **Piper** (`piper` binary + ONNX models under `PIPER_MODEL_DIR`)
 - PostgreSQL database
 
 ## Local Setup
@@ -50,11 +51,14 @@ Public help site: https://csen-scu.github.io/csen-174-s26-team-project-ttstt/ (s
    Then set the following in `.env`:
 
    - `DISCORD_TOKEN`
-   - `DEEPGRAM_API_KEY`
    - `DATABASE_URL`
-   - Optional: `FFMPEG_EXECUTABLE` (defaults to `ffmpeg`)
+   - `DEEPGRAM_API_KEY` (cloud TTS; omit only if using Piper-only with `PIPER_MODEL_DIR`)
+   - Optional Piper (local TTS): `PIPER_MODEL_DIR`, `PIPER_EXECUTABLE`, `PIPER_DEFAULT_VOICE`
+   - Optional: `FFMPEG_EXECUTABLE` (defaults to `ffmpeg`; used for Discord playback and Piper pitch shift)
    - Optional: `OPENAI_API_KEY` (enables OpenAI Moderation API checks on TTS text)
    - Optional: `HELP_URL` (defaults to the GitHub Pages help site for `/help`)
+
+   **Piper setup:** Install [piper](https://github.com/rhasspy/piper) and download voice `.onnx` (+ `.json`) files into `PIPER_MODEL_DIR`. Set `PIPER_DEFAULT_VOICE` to the model basename you installed (e.g. `en_US-libritts_r-medium`); that value is used when you run `/tts_provider_set` → Piper and for synthesis when no per-user voice is saved. Then optionally refine with `/tts_voice_set voice:<basename>`.
 
 ## Privacy and content safety
 

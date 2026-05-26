@@ -8,6 +8,9 @@ from pathlib import Path
 LOGGER = logging.getLogger("ttstt-bot.db")
 
 _SCHEMA_SQL = Path(__file__).resolve().parent / "sql" / "voice_preferences.sql"
+_MIGRATION_TTS_PROVIDER_SQL = (
+    Path(__file__).resolve().parent / "sql" / "voice_preferences_v2_tts_provider.sql"
+)
 
 
 async def create_postgres_pool(database_url: str) -> object:
@@ -29,6 +32,8 @@ async def ensure_voice_preferences_schema(pool: object) -> None:
         raise RuntimeError(f"Missing schema file: {_SCHEMA_SQL}")
 
     ddl = _SCHEMA_SQL.read_text(encoding="utf-8")
+    migration = _MIGRATION_TTS_PROVIDER_SQL.read_text(encoding="utf-8")
     async with pool.acquire() as conn:  # type: ignore[union-attr]
         await conn.execute(ddl)
+        await conn.execute(migration)
     LOGGER.info("Ensured Postgres schema: bot_voice_preferences")

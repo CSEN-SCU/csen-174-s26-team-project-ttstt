@@ -15,11 +15,15 @@ from apps.bot.content_moderation import Disposition, moderate_for_tts
 from apps.bot.db import create_postgres_pool
 from apps.bot.playback import PlaybackCoordinator
 from apps.bot.session_registry import SessionRegistry
-from apps.bot.tts import DeepgramTtsClient, TtsSynthesisError, chunk_text_for_tts, synthesize_text
+from apps.bot.piper_tts import PiperTtsClient, get_default_piper_voice
+from apps.bot.tts import DeepgramTtsClient, TtsClient, TtsSynthesisError, chunk_text_for_tts, synthesize_text
 from apps.bot.tts_listener_registry import TtsListenerRegistry
 from apps.bot.voice_preferences import (
     FEATURED_AURA2_VOICES,
+    FEATURED_PIPER_VOICES,
     PostgresVoicePreferencesRepository,
+    TtsProvider,
+    apply_tts_provider_switch,
     format_voice_settings_message,
     merge_voice_preferences,
 )
@@ -50,7 +54,9 @@ class RelayBot(commands.Bot):
     def __init__(
         self,
         discord_token: str,
-        tts_client: DeepgramTtsClient,
+        *,
+        tts_deepgram: DeepgramTtsClient | None,
+        tts_piper: PiperTtsClient | None,
         voice_preferences: PostgresVoicePreferencesRepository,
         db_pool: object,
         ffmpeg_executable: str,
@@ -64,7 +70,8 @@ class RelayBot(commands.Bot):
 
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.discord_token = discord_token
-        self.tts_client = tts_client
+        self.tts_deepgram = tts_deepgram
+        self.tts_piper = tts_piper
         self.voice_preferences = voice_preferences
         self.db_pool = db_pool
         self.sessions = SessionRegistry()
@@ -80,6 +87,7 @@ class RelayBot(commands.Bot):
         self.tree.add_command(tts_listen_user)
         self.tree.add_command(tts_stop_listening_user)
         self.tree.add_command(tts_stop_all_listeners)
+        self.tree.add_command(tts_provider_set)
         self.tree.add_command(tts_voice_set)
         self.tree.add_command(tts_voice_show)
         self.tree.add_command(tts_voice_reset)
@@ -137,6 +145,18 @@ class RelayBot(commands.Bot):
             )
             return
 
+        try:
+            tts_client = self._resolve_tts_client(prefs.tts_provider)
+        except TtsSynthesisError as exc:
+            LOGGER.warning(
+                "TTS provider unavailable for guild=%s user=%s provider=%s: %s",
+                message.guild.id,
+                message.author.id,
+                prefs.tts_provider.value,
+                exc,
+            )
+            return
+
         chunks = chunk_text_for_tts(text=text, max_chars=MAX_TTS_CHARS)
         for chunk in chunks:
             try:
@@ -144,10 +164,16 @@ class RelayBot(commands.Bot):
                     synthesize_text,
                     chunk,
                     prefs.to_provider_dict(),
-                    self.tts_client,
+                    tts_client,
                 )
             except TtsSynthesisError as exc:
-                LOGGER.warning("TTS failed for guild=%s user=%s: %s", message.guild.id, message.author.id, exc)
+                LOGGER.warning(
+                    "TTS failed for guild=%s user=%s provider=%s: %s",
+                    message.guild.id,
+                    message.author.id,
+                    prefs.tts_provider.value,
+                    exc,
+                )
                 continue
 
             item = self.playback.enqueue(
@@ -172,6 +198,21 @@ class RelayBot(commands.Bot):
             if asyncio.iscoroutine(close_result):
                 await close_result
         await super().close()
+
+    def _resolve_tts_client(self, provider: TtsProvider) -> TtsClient:
+        if provider is TtsProvider.PIPER:
+            if self.tts_piper is None:
+                raise TtsSynthesisError(
+                    "Piper TTS is not configured on this bot. "
+                    "Set PIPER_MODEL_DIR (and install piper), or run /tts_provider_set deepgram."
+                )
+            return self.tts_piper
+        if self.tts_deepgram is None:
+            raise TtsSynthesisError(
+                "Deepgram TTS is not configured on this bot. "
+                "Set DEEPGRAM_API_KEY, or run /tts_provider_set piper with Piper configured."
+            )
+        return self.tts_deepgram
 
 
 async def _ensure_voice_client(
@@ -345,9 +386,77 @@ async def tts_stop_all_listeners(interaction: discord.Interaction) -> None:
     )
 
 
+@app_commands.command(
+    name="tts_provider_set",
+    description="Choose Deepgram Aura (cloud) or Piper (local) for your TTS in this server.",
+)
+@app_commands.describe(
+    provider="TTS engine: deepgram (cloud) or piper (local ONNX voices)",
+)
+@app_commands.choices(
+    provider=[
+        app_commands.Choice(name="Deepgram Aura (cloud)", value=TtsProvider.DEEPGRAM.value),
+        app_commands.Choice(name="Piper (local)", value=TtsProvider.PIPER.value),
+    ]
+)
+async def tts_provider_set(
+    interaction: discord.Interaction,
+    provider: app_commands.Choice[str],
+) -> None:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
+
+    if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("Use this command in a server.", ephemeral=True)
+        return
+
+    try:
+        selected = TtsProvider.parse(provider.value)
+    except ValueError as exc:
+        await interaction.response.send_message(str(exc), ephemeral=True)
+        return
+
+    if selected is TtsProvider.PIPER and bot.tts_piper is None:
+        await interaction.response.send_message(
+            "Piper is not configured on this bot (set PIPER_MODEL_DIR and install the piper binary).",
+            ephemeral=True,
+        )
+        return
+    if selected is TtsProvider.DEEPGRAM and bot.tts_deepgram is None:
+        await interaction.response.send_message(
+            "Deepgram is not configured on this bot (set DEEPGRAM_API_KEY).",
+            ephemeral=True,
+        )
+        return
+
+    current = await bot.voice_preferences.get(guild_id=interaction.guild.id, user_id=interaction.user.id)
+    updated = apply_tts_provider_switch(current, selected)
+    try:
+        saved = await bot.voice_preferences.upsert(
+            guild_id=interaction.guild.id,
+            user_id=interaction.user.id,
+            prefs=updated,
+        )
+    except ValueError as exc:
+        await interaction.response.send_message(str(exc), ephemeral=True)
+        return
+    except Exception as exc:
+        LOGGER.warning("Failed to persist TTS provider: %r", exc)
+        await interaction.response.send_message(
+            "Could not save TTS provider right now. Please try again.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.send_message(
+        format_voice_settings_message(saved, prefix="TTS provider updated"),
+        ephemeral=True,
+    )
+
+
 @app_commands.command(name="tts_voice_set", description="Set your TTS voice preferences in this server.")
 @app_commands.describe(
-    voice="Deepgram Aura model id (pick from suggestions or type any valid id)",
+    voice="Voice id for your provider (Aura model or Piper ONNX basename)",
     speed="Speech speed between 0.5 and 2.0",
     pitch="Pitch between -20 and 20",
     style="Optional style/tone label; use none to clear",
@@ -404,8 +513,23 @@ async def tts_voice_set_voice_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ) -> list[app_commands.Choice[str]]:
+    bot = interaction.client
+    assert isinstance(bot, RelayBot)
     needle = (current or "").strip().lower()
-    matches = [v for v in FEATURED_AURA2_VOICES if needle in v]
+
+    catalog: tuple[str, ...] = FEATURED_AURA2_VOICES
+    if interaction.guild is not None and interaction.user is not None:
+        prefs = await bot.voice_preferences.get(
+            guild_id=interaction.guild.id,
+            user_id=interaction.user.id,
+        )
+        if prefs.tts_provider is TtsProvider.PIPER:
+            if bot.tts_piper is not None and bot.tts_piper.installed_voices:
+                catalog = bot.tts_piper.installed_voices
+            else:
+                catalog = FEATURED_PIPER_VOICES
+
+    matches = [v for v in catalog if needle in v.lower()]
     return [app_commands.Choice(name=model, value=model) for model in matches[:25]]
 
 
@@ -465,6 +589,23 @@ async def help_command(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+def _build_tts_clients(*, deepgram_api_key: str | None, ffmpeg_executable: str) -> tuple[DeepgramTtsClient | None, PiperTtsClient | None]:
+    tts_deepgram: DeepgramTtsClient | None = None
+    if deepgram_api_key:
+        tts_deepgram = DeepgramTtsClient(api_key=deepgram_api_key)
+
+    tts_piper: PiperTtsClient | None = None
+    piper_model_dir = os.getenv("PIPER_MODEL_DIR", "").strip()
+    if piper_model_dir:
+        tts_piper = PiperTtsClient(
+            model_dir=piper_model_dir,
+            executable=os.getenv("PIPER_EXECUTABLE", "piper"),
+            default_voice=get_default_piper_voice(),
+            ffmpeg_executable=ffmpeg_executable,
+        )
+    return tts_deepgram, tts_piper
+
+
 async def main() -> None:
     load_dotenv()
     discord_token = os.getenv("DISCORD_TOKEN")
@@ -474,15 +615,23 @@ async def main() -> None:
     help_url = os.getenv("HELP_URL", DEFAULT_HELP_URL)
     if not discord_token:
         raise RuntimeError("DISCORD_TOKEN must be set in .env.")
-    if not deepgram_api_key:
-        raise RuntimeError("DEEPGRAM_API_KEY must be set in .env.")
     if not database_url:
         raise RuntimeError("DATABASE_URL must be set in .env.")
+
+    tts_deepgram, tts_piper = _build_tts_clients(
+        deepgram_api_key=deepgram_api_key,
+        ffmpeg_executable=ffmpeg_executable,
+    )
+    if tts_deepgram is None and tts_piper is None:
+        raise RuntimeError(
+            "Configure at least one TTS backend: set DEEPGRAM_API_KEY and/or PIPER_MODEL_DIR in .env."
+        )
 
     db_pool = await create_postgres_pool(database_url=database_url)
     bot = RelayBot(
         discord_token=discord_token,
-        tts_client=DeepgramTtsClient(api_key=deepgram_api_key),
+        tts_deepgram=tts_deepgram,
+        tts_piper=tts_piper,
         voice_preferences=PostgresVoicePreferencesRepository(conn=db_pool),
         db_pool=db_pool,
         ffmpeg_executable=ffmpeg_executable,

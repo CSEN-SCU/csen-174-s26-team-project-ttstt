@@ -21,12 +21,14 @@ class FakeConn:
         speed: float,
         pitch: float,
         style: str | None,
+        tts_provider: str,
     ) -> None:
         self.rows[(guild_id, user_id)] = {
             "voice": voice,
             "speed": speed,
             "pitch": pitch,
             "style": style,
+            "tts_provider": tts_provider,
         }
 
 
