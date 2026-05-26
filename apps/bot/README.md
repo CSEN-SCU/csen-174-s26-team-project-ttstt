@@ -10,8 +10,7 @@ commanded text-to-speech listener support.
 - `/leave` - Disconnect from voice in the current server.
 - `/status` - Report current voice connection status for the server.
 - `/tts_listen_user <user>` - Start reading text messages from a selected user in the control channel.
-- `/tts_stop_listening_user <user>` - Stop reading one selected user's messages.
-- `/tts_stop_all_listeners` - Stop reading all configured users in the server.
+- `/tts_stop_listening` - Stop reading your own messages.
 - `/tts_voice_set` - Set your own TTS voice/model, speed, pitch, and style for the current server (partial updates; use style `none` to clear).
 - `/tts_voice_show` - Show your saved TTS settings for the current server.
 - `/tts_voice_reset` - Reset your TTS settings to defaults for the current server.

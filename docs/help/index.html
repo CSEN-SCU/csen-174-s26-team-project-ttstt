@@ -47,7 +47,7 @@
           <li>Run <code>/tts_listen_user</code> and pick whose messages should be read aloud.</li>
           <li>Those users post in the <strong>same text channel</strong>; the bot speaks their messages in voice.</li>
           <li>Optional: <code>/tts_voice_set</code> to customize your synthetic voice per server (use style <code>none</code> to clear style).</li>
-          <li>Run <code>/tts_stop_listening_user</code> or <code>/tts_stop_all_listeners</code> when done.</li>
+          <li>Run <code>/tts_stop_listening</code> when you no longer want your messages read aloud.</li>
           <li>Run <code>/leave</code> when the bot should disconnect from voice.</li>
         </ol>
 
@@ -101,12 +101,8 @@
               <td>Start reading a user's messages from the control channel aloud in voice.</td>
             </tr>
             <tr>
-              <td><code>/tts_stop_listening_user</code></td>
-              <td>Stop reading one user.</td>
-            </tr>
-            <tr>
-              <td><code>/tts_stop_all_listeners</code></td>
-              <td>Stop reading all configured users in this server.</td>
+              <td><code>/tts_stop_listening</code></td>
+              <td>Stop reading your messages from the control channel aloud in voice.</td>
             </tr>
           </tbody>
         </table>

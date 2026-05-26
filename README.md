@@ -13,7 +13,7 @@ Speech-to-text is not part of the deployable bot today; see [`docs/product-visio
 This repository contains a working deployable Discord bot at [`apps/bot`](apps/bot):
 
 - Voice control commands: `/join`, `/leave`, `/status`
-- TTS listener controls: `/tts_listen_user`, `/tts_stop_listening_user`, `/tts_stop_all_listeners`
+- TTS listener controls: `/tts_listen_user`, `/tts_stop_listening`
 - Per-user voice preferences (Postgres-backed): `/tts_voice_set`, `/tts_voice_show`, `/tts_voice_reset`
 
 See [`apps/bot/README.md`](apps/bot/README.md) for setup and usage.

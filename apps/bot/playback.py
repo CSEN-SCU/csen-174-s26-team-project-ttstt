@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
@@ -20,6 +21,7 @@ class PlaybackItem:
     audio_bytes: bytes
     source_user_id: int
     source_message_id: int
+    enqueued_at_monotonic: float
 
 
 class GuildPlaybackQueue:
@@ -38,6 +40,7 @@ class GuildPlaybackQueue:
             audio_bytes=audio_bytes,
             source_user_id=source_user_id,
             source_message_id=source_message_id,
+            enqueued_at_monotonic=time.monotonic(),
         )
         self._items_by_guild[guild_id].append(item)
         return item
@@ -69,6 +72,10 @@ class PlaybackCoordinator:
         self._wake_events: dict[int, asyncio.Event] = {}
         self._worker_tasks: dict[int, asyncio.Task[None]] = {}
         self._last_played_sequence: dict[int, int] = defaultdict(int)
+        self._last_enqueue_to_playback_delay: dict[int, float | None] = {}
+
+    def get_last_enqueue_to_playback_delay(self, guild_id: int) -> float | None:
+        return self._last_enqueue_to_playback_delay.get(guild_id)
 
     def enqueue(self, guild_id: int, audio_bytes: bytes, source_user_id: int, source_message_id: int) -> PlaybackItem:
         item = self._queue.enqueue(
@@ -125,6 +132,8 @@ class PlaybackCoordinator:
         if voice_client is None or not voice_client.is_connected():
             LOGGER.warning("Dropping queued audio for guild=%s because voice is disconnected", item.guild_id)
             return
+
+        self._last_enqueue_to_playback_delay[item.guild_id] = time.monotonic() - item.enqueued_at_monotonic
 
         source = discord.FFmpegPCMAudio(
             source=io.BytesIO(item.audio_bytes),
