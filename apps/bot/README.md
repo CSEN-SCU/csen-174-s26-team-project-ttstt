@@ -126,3 +126,5 @@ CMD ["python", "-m", "apps.bot.main"]
 Set `DISCORD_TOKEN` in your runtime environment/secrets manager.
 Also set `DEEPGRAM_API_KEY` and `DATABASE_URL`.
 Required: `HELP_URL` — your Netlify help site URL for `/help`.
+
+Link to Demo Video: https://youtu.be/iY03F8pIJqQ

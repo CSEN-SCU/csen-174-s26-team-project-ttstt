@@ -59,6 +59,19 @@ def speed_to_length_scale(speed: float) -> float:
     return max(MIN_LENGTH_SCALE, min(MAX_LENGTH_SCALE, scale))
 
 
+def pitch_to_playback_factor(pitch: float) -> float:
+    """Map user pitch (-20..20) to a playback rate multiplier (12-TET semitones)."""
+    return 2.0 ** (pitch / 12.0)
+
+
+def read_wav_sample_rate(wav_bytes: bytes, *, default: int = 22050) -> int:
+    """Return sample rate from a PCM WAV header; Piper commonly uses 22050 Hz."""
+    if len(wav_bytes) < 28 or wav_bytes[0:4] != b"RIFF" or wav_bytes[8:12] != b"WAVE":
+        return default
+    rate = int.from_bytes(wav_bytes[24:28], "little")
+    return rate if rate > 0 else default
+
+
 def resolve_piper_model_path(model_dir: Path, voice: str) -> Path:
     name = voice.strip()
     if not name:
@@ -170,7 +183,8 @@ class PiperTtsClient:
 
     def _apply_pitch_shift(self, wav_bytes: bytes, *, pitch: float) -> bytes:
         """Shift pitch with ffmpeg; pitch is in semitone-like units (-20..20)."""
-        factor = 2.0 ** (pitch / 12.0)
+        sample_rate = read_wav_sample_rate(wav_bytes)
+        factor = pitch_to_playback_factor(pitch)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as inp:
             inp_path = inp.name
             inp.write(wav_bytes)
@@ -185,7 +199,7 @@ class PiperTtsClient:
                 "-i",
                 inp_path,
                 "-af",
-                f"asetrate=44100*{factor:.6f},aresample=44100",
+                f"asetrate={sample_rate}*{factor:.6f},aresample={sample_rate}",
                 out_path,
             ]
             proc = subprocess.run(cmd, capture_output=True, timeout=30, check=False)

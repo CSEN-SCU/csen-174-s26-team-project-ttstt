@@ -13,6 +13,16 @@ class TtsSynthesisError(RuntimeError):
     """Raised when provider synthesis fails or returns no audio."""
 
 
+# Deepgram Aura speed range: https://developers.deepgram.com/docs/tts-voice-controls
+DEEPGRAM_MIN_SPEED = 0.7
+DEEPGRAM_MAX_SPEED = 1.5
+
+
+def clamp_deepgram_speed(speed: float) -> float:
+    """Clamp user speed prefs to Deepgram Aura's supported range."""
+    return max(DEEPGRAM_MIN_SPEED, min(DEEPGRAM_MAX_SPEED, speed))
+
+
 class TtsClient(Protocol):
     def synthesize(self, text: str, voice_prefs: Mapping[str, object]) -> bytes:
         ...
@@ -130,7 +140,7 @@ class DeepgramTtsClient:
         pitch = voice_prefs.get("pitch")
         style = voice_prefs.get("style")
         if speed is not None:
-            options["speed"] = speed
+            options["speed"] = clamp_deepgram_speed(float(speed))
         if pitch is not None:
             options["pitch"] = pitch
         if style:
