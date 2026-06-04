@@ -46,7 +46,7 @@
           <li>Join a voice channel, then run <code>/join</code> in the text channel you want to use.</li>
           <li>Run <code>/tts_listen_user</code> and pick whose messages should be read aloud.</li>
           <li>Those users post in the <strong>same text channel</strong>; the bot speaks their messages in voice.</li>
-          <li>Optional: <code>/tts_voice_set</code> to customize your synthetic voice per server (use style <code>none</code> to clear style).</li>
+          <li>Optional: <code>/tts_voice_set</code> to customize your synthetic voice per server.</li>
           <li>Run <code>/tts_stop_listening</code> when you no longer want your messages read aloud.</li>
           <li>Run <code>/leave</code> when the bot should disconnect from voice.</li>
         </ol>
@@ -119,8 +119,7 @@
             <tr>
               <td><code>/tts_voice_set</code></td>
               <td>
-                Set Deepgram voice/model, speed (0.5–2.0), pitch (−20–20), and optional style (use
-                <code>none</code> to clear style). Omit fields you do not want to change.
+                Set voice/model, speed (0.5–2.0), and pitch (−20–20). Omit fields you do not want to change.
               </td>
             </tr>
             <tr>

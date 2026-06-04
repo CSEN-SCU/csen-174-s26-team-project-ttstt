@@ -148,7 +148,7 @@ Same study session check-in, now spoken with a local Piper voice.
 ### Line 9
 
 ```text
-Each person can set voice, speed, pitch, and style for this server with the voice set command.
+Each person can set voice, speed, and pitch for this server with the voice set command.
 ```
 
 <a id="line-10"></a>

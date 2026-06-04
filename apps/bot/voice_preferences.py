@@ -11,7 +11,6 @@ from apps.bot.piper_tts import get_default_piper_voice
 DEFAULT_VOICE = "aura-2-thalia-en"
 DEFAULT_SPEED = 1.0
 DEFAULT_PITCH = 0.0
-DEFAULT_STYLE: str | None = None
 
 MIN_SPEED = 0.5
 MAX_SPEED = 2.0
@@ -46,8 +45,6 @@ FEATURED_PIPER_VOICES: tuple[str, ...] = (
     "en_GB-southern_english_female-medium",
 )
 
-STYLE_CLEAR_TOKENS = frozenset({"", "none", "default", "clear"})
-
 
 class TtsProvider(str, Enum):
     DEEPGRAM = "deepgram"
@@ -80,21 +77,19 @@ INSERT INTO bot_voice_preferences (
     voice,
     speed,
     pitch,
-    style,
     tts_provider
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
+) VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (guild_id, user_id)
 DO UPDATE SET
     voice = EXCLUDED.voice,
     speed = EXCLUDED.speed,
     pitch = EXCLUDED.pitch,
-    style = EXCLUDED.style,
     tts_provider = EXCLUDED.tts_provider,
     updated_at = NOW();
 """
 
 SELECT_PREFERENCES_SQL = """
-SELECT voice, speed, pitch, style, tts_provider
+SELECT voice, speed, pitch, tts_provider
 FROM bot_voice_preferences
 WHERE guild_id = $1 AND user_id = $2;
 """
@@ -105,7 +100,6 @@ class VoicePreferences:
     voice: str
     speed: float
     pitch: float
-    style: str | None = None
     tts_provider: TtsProvider = TtsProvider.DEEPGRAM
 
     @classmethod
@@ -114,7 +108,6 @@ class VoicePreferences:
             voice=default_voice_for_provider(provider),
             speed=DEFAULT_SPEED,
             pitch=DEFAULT_PITCH,
-            style=DEFAULT_STYLE,
             tts_provider=provider,
         )
 
@@ -125,19 +118,14 @@ class VoicePreferences:
             raise ValueError(f"speed must be between {MIN_SPEED} and {MAX_SPEED}")
         if not (MIN_PITCH <= self.pitch <= MAX_PITCH):
             raise ValueError(f"pitch must be between {MIN_PITCH} and {MAX_PITCH}")
-        if self.style is not None and not self.style.strip():
-            raise ValueError("style must be non-empty when provided")
 
     def to_provider_dict(self) -> dict[str, object]:
-        payload: dict[str, object] = {
+        return {
             "voice": self.voice,
             "speed": self.speed,
             "pitch": self.pitch,
             "tts_provider": self.tts_provider.value,
         }
-        if self.style:
-            payload["style"] = self.style
-        return payload
 
 
 def merge_voice_preferences(
@@ -146,9 +134,8 @@ def merge_voice_preferences(
     voice: str | None = None,
     speed: float | None = None,
     pitch: float | None = None,
-    style: str | None = None,
 ) -> VoicePreferences:
-    """Apply partial updates; style tokens none/default/clear remove the style."""
+    """Apply partial updates to voice, speed, and pitch."""
 
     new_voice = existing.voice
     if voice is not None:
@@ -157,19 +144,10 @@ def merge_voice_preferences(
     new_speed = existing.speed if speed is None else speed
     new_pitch = existing.pitch if pitch is None else pitch
 
-    new_style = existing.style
-    if style is not None:
-        stripped = style.strip()
-        if stripped.lower() in STYLE_CLEAR_TOKENS:
-            new_style = None
-        else:
-            new_style = stripped
-
     return VoicePreferences(
         voice=new_voice,
         speed=new_speed,
         pitch=new_pitch,
-        style=new_style,
         tts_provider=existing.tts_provider,
     )
 
@@ -193,7 +171,6 @@ def apply_tts_provider_switch(
         voice=new_voice,
         speed=existing.speed,
         pitch=existing.pitch,
-        style=existing.style,
         tts_provider=provider,
     )
 
@@ -201,7 +178,7 @@ def apply_tts_provider_switch(
 def format_voice_settings_message(prefs: VoicePreferences, *, prefix: str) -> str:
     return (
         f"{prefix}: provider={prefs.tts_provider.value}, voice=`{prefs.voice}`, "
-        f"speed={prefs.speed}, pitch={prefs.pitch}, style={prefs.style or 'default'}."
+        f"speed={prefs.speed}, pitch={prefs.pitch}."
     )
 
 
@@ -238,7 +215,6 @@ class PostgresVoicePreferencesRepository:
             voice=str(row["voice"]),
             speed=float(row["speed"]),
             pitch=float(row["pitch"]),
-            style=str(row["style"]) if row["style"] is not None else None,
             tts_provider=provider,
         )
 
@@ -251,7 +227,6 @@ class PostgresVoicePreferencesRepository:
             prefs.voice,
             prefs.speed,
             prefs.pitch,
-            prefs.style,
             prefs.tts_provider.value,
         )
         return prefs

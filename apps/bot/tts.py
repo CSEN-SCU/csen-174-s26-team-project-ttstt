@@ -138,13 +138,10 @@ class DeepgramTtsClient:
         }
         speed = voice_prefs.get("speed")
         pitch = voice_prefs.get("pitch")
-        style = voice_prefs.get("style")
         if speed is not None:
             options["speed"] = clamp_deepgram_speed(float(speed))
         if pitch is not None:
             options["pitch"] = pitch
-        if style:
-            options["style"] = style
 
         generate_fn = client.speak.v1.audio.generate
         accepted_keys = set(inspect.signature(generate_fn).parameters.keys())

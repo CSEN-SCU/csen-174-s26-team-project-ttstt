@@ -549,14 +549,12 @@ async def tts_provider_set(
     voice="Voice id for your provider (Aura model or Piper ONNX basename)",
     speed="Speech speed between 0.5 and 2.0",
     pitch="Pitch between -20 and 20",
-    style="Optional style/tone label; use none to clear",
 )
 async def tts_voice_set(
     interaction: discord.Interaction,
     voice: str | None = None,
     speed: app_commands.Range[float, 0.5, 2.0] | None = None,
     pitch: app_commands.Range[float, -20.0, 20.0] | None = None,
-    style: str | None = None,
 ) -> None:
     bot = interaction.client
     assert isinstance(bot, RelayBot)
@@ -565,16 +563,15 @@ async def tts_voice_set(
         await interaction.response.send_message("Use this command in a server.", ephemeral=True)
         return
 
-    if voice is None and speed is None and pitch is None and style is None:
+    if voice is None and speed is None and pitch is None:
         await interaction.response.send_message(
-            "Provide at least one option: voice, speed, pitch, or style "
-            "(use style `none` to clear a saved style).",
+            "Provide at least one option: voice, speed, or pitch.",
             ephemeral=True,
         )
         return
 
     current = await bot.voice_preferences.get(guild_id=interaction.guild.id, user_id=interaction.user.id)
-    merged = merge_voice_preferences(current, voice=voice, speed=speed, pitch=pitch, style=style)
+    merged = merge_voice_preferences(current, voice=voice, speed=speed, pitch=pitch)
     try:
         saved = await bot.voice_preferences.upsert(
             guild_id=interaction.guild.id,

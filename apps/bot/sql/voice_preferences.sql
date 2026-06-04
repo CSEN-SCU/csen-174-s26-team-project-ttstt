@@ -4,7 +4,6 @@ CREATE TABLE IF NOT EXISTS bot_voice_preferences (
     voice TEXT NOT NULL,
     speed DOUBLE PRECISION NOT NULL,
     pitch DOUBLE PRECISION NOT NULL,
-    style TEXT NULL,
     tts_provider TEXT NOT NULL DEFAULT 'deepgram',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

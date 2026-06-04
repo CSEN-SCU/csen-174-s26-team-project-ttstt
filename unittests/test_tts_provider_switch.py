@@ -19,7 +19,6 @@ def test_apply_tts_provider_switch_resets_voice_for_piper() -> None:
         voice="aura-2-thalia-en",
         speed=1.1,
         pitch=-2.0,
-        style="warm",
         tts_provider=TtsProvider.DEEPGRAM,
     )
 

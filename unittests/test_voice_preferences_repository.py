@@ -20,14 +20,12 @@ class FakeConn:
         voice: str,
         speed: float,
         pitch: float,
-        style: str | None,
         tts_provider: str,
     ) -> None:
         self.rows[(guild_id, user_id)] = {
             "voice": voice,
             "speed": speed,
             "pitch": pitch,
-            "style": style,
             "tts_provider": tts_provider,
         }
 
@@ -42,7 +40,7 @@ def test_repository_returns_defaults_when_missing() -> None:
 
 def test_repository_upsert_and_reset() -> None:
     repo = PostgresVoicePreferencesRepository(conn=FakeConn())
-    updated = VoicePreferences(voice="aura-2-thalia-en", speed=1.2, pitch=-2.0, style="calm")
+    updated = VoicePreferences(voice="aura-2-thalia-en", speed=1.2, pitch=-2.0)
 
     saved = asyncio.run(repo.upsert(guild_id=1, user_id=99, prefs=updated))
     reset = asyncio.run(repo.reset(guild_id=1, user_id=99))
@@ -52,8 +50,8 @@ def test_repository_upsert_and_reset() -> None:
 
 
 def test_voice_preferences_validate_rejects_out_of_range_values() -> None:
-    bad_speed = VoicePreferences(voice="aura-2-thalia-en", speed=2.5, pitch=0.0, style=None)
-    bad_pitch = VoicePreferences(voice="aura-2-thalia-en", speed=1.0, pitch=99.0, style=None)
+    bad_speed = VoicePreferences(voice="aura-2-thalia-en", speed=2.5, pitch=0.0)
+    bad_pitch = VoicePreferences(voice="aura-2-thalia-en", speed=1.0, pitch=99.0)
 
     try:
         bad_speed.validate()

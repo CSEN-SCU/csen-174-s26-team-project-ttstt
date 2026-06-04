@@ -14,7 +14,7 @@ commanded text-to-speech listener support.
 - `/tts_stop_listening_user <user>` - Stop reading one selected user's messages.
 - `/tts_stop_all_listeners` - Stop reading all configured users in the server.
 - `/tts_provider_set` - Choose **Deepgram Aura** (cloud) or **Piper** (local ONNX voices) for your TTS in this server.
-- `/tts_voice_set` - Set your own TTS voice/model, speed, pitch, and style for the current server (partial updates; use style `none` to clear).
+- `/tts_voice_set` - Set your own TTS voice/model, speed, and pitch for the current server (partial updates).
 - `/tts_voice_show` - Show your saved TTS settings for the current server.
 - `/tts_voice_reset` - Reset your TTS settings to defaults for the current server.
 
