@@ -2,7 +2,7 @@
 
 By: Noelle Evanich, Diego Silva, Dana Steinke
 
-**Discord bot that reads selected users' text messages aloud in voice channels—with per-user synthetic voices—so text-first and non-verbal members are heard during live hangs.**
+**Discord bot that reads selected users' text messages aloud in voice channels, with per-user synthetic voices, so text-first and non-verbal members are heard during live hangs.**
 
 [![Add bot to Discord](https://img.shields.io/badge/Add%20bot-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1496265708215075016)
 
@@ -19,7 +19,7 @@ By: Noelle Evanich, Diego Silva, Dana Steinke
 
 ## Technical report
 
-Process narrative, architecture evolution, and sprint retrospectives: **[TECHNICAL_REPORT.md](TECHNICAL_REPORT.md)** (export to PDF for course submission).
+Process narrative, architecture evolution, and sprint retrospectives: **[TECHNICAL_REPORT.md](TECHNICAL_REPORT.md)**.
 
 ## What it does today
 

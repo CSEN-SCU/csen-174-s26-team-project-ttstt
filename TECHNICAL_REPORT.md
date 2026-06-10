@@ -6,22 +6,22 @@
 
 ## 1. Product vision and evolution
 
-**Original (W2).** TTSTT was conceived as a **bidirectional Discord bridge**: neural TTS would read typed chat aloud in voice channels, and Whisper-class ASR would transcribe voice back to text—serving non-verbal and text-first members *and* Deaf/hard-of-hearing users who need captions ([`docs/product-vision.md`](docs/product-vision.md), commit [`8c26284`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/8c26284)).
+Our original Week 2 product vision statement was long and complex, as we were trying to address all possible users of our product (Deaf/hard-of-hearing users + non-verbal/text-first users). Our scope was also too broad because we initially planned on providing neural Text-To-Speech to read aloud typed chat in voice channels, and Whisper-class ASR that would transcribe voice back to text, within a single product. ([`docs/product-vision.md`](docs/product-vision.md), commit [`8c26284`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/8c26284)).
 
-**Current (code freeze).** The deployable bot in [`apps/bot`](apps/bot) is **text → speech only**: selected users' messages are synthesized with per-user voices and played in the voice channel. Speech-to-text is explicitly out of scope until the team reopens bidirectional bridging ([`docs/product-vision.md` § Scope note](docs/product-vision.md)).
+Our new product vision statement shifted to text → speech only (selected users' messages are synthesized with per-user voices and played in the voice channel). We removed speech-to-text (voice receive, ASR, transcript posting, and `/stt_*` commands) because that was out of scope for this quarter-long project and allowed us to focus on one main user story, but it can potentially be reintroduced to implement bidirectional bridging. ([`docs/product-vision.md` § Scope note](docs/product-vision.md)).
 
 ### Four decisions that bent the vision
 
 | # | Decision | Trigger | Repo artifact |
 |---|----------|---------|---------------|
-| 1 | **Cut STT from the deployable bot** | Deepgram STT worked in prototype, but rearranging Discord UDP packets for reliable utterance capture blocked consolidation ([`docs/sprint-2-retro.md`](docs/sprint-2-retro.md)) | STT removed in [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88) (`apps/bot/stt.py` deleted) |
-| 2 | **Narrow primary persona to text-first / non-verbal** | STT cut removed the caption path for Deaf/HoH users; vision narrative updated accordingly | [`docs/architechture-retrospective.md` § What has Changed](docs/architechture-retrospective.md) |
+| 1 | **Cut STT from the deployable bot** | Deepgram STT worked in our prototypes, but rearranging Discord UDP packets for reliable utterance capture blocked consolidation ([`docs/sprint-2-retro.md`](docs/sprint-2-retro.md)) | STT removed in [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88) (`apps/bot/stt.py` deleted) |
+| 2 | **Narrow our primary persona to text-first / non-verbal user** | The STT cut as described above removed the caption path for Deaf/HoH users. Our vision narrative was updated accordingly | [`docs/architechture-retrospective.md` § What has Changed](docs/architechture-retrospective.md) |
 | 3 | **Add content moderation on the TTS hot path** | Peer red-team role-play of crisis disclosures and harmful relay ([Finding 3.1](docs/red-team-report-ttstt-received.md)) | [`apps/bot/content_moderation.py`](apps/bot/content_moderation.py), merged in [PR #25](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/pull/25) |
 | 4 | **Add self-hosted Piper alongside Deepgram** | Sprint 3 commitment for lower latency and operator control without metered cloud TTS | [`apps/bot/piper_tts.py`](apps/bot/piper_tts.py), [`09d68b1`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/09d68b1) |
 
 ### Persona artifact
 
-Our W2 vision narrative centers **Morgan**, a text-first study-group member who types in `#general` while friends hang in voice—their lines never reach listeners unless someone manually reads aloud ([`docs/product-vision.md` § 1b](docs/product-vision.md)). TTSTT still serves Morgan: `/tts_listen_user` + per-user synthetic voice closes the text→voice gap. The W2 caption persona (Deaf/HoH member needing voice→text) is **not served** by the frozen bot; we documented that trade explicitly in [`docs/ethics-reflection.md`](docs/ethics-reflection.md) stakeholder analysis and [`docs/architechture-retrospective.md`](docs/architechture-retrospective.md).
+Our W2 vision narrative centers **Morgan**, a text-first study-group member who types in `#general` while their friends hang in voice. Their lines never reach listeners unless someone manually reads aloud ([`docs/product-vision.md` § 1b](docs/product-vision.md)). TTSTT still serves Morgan with `/tts_listen_user` + per-user synthetic voice closes the text→voice gap. However, the W2 caption persona (Deaf/HoH member needing voice→text) is **not served** by the bot. We documented that trade explicitly in [`docs/ethics-reflection.md`](docs/ethics-reflection.md) stakeholder analysis and [`docs/architechture-retrospective.md`](docs/architechture-retrospective.md).
 
 **Repo reference:** [`docs/product-vision.md`](docs/product-vision.md) · [Sprint board](https://github.com/orgs/CSEN-SCU/projects/4)
 
@@ -29,9 +29,9 @@ Our W2 vision narrative centers **Morgan**, a text-first study-group member who 
 
 ## 2. Architecture evolution (W4 → W8 → current)
 
-### W4 — initial target (four containers, bidirectional)
+### W4: initial target (four containers, bidirectional)
 
-From [`architecture/architecture.md`](architecture/architecture.md): Discord Bot + Companion API + Audio Processing + Postgres, with Whisper-class ASR and Piper-class TTS behind vendor-agnostic interfaces.
+From [`architecture/architecture.md`](architecture/architecture.md): During Week 4, we had Discord Bot + Companion API + Audio Processing + Postgres, with Whisper-class ASR and Piper-class TTS behind vendor-agnostic interfaces.
 
 ```mermaid
 flowchart LR
@@ -53,9 +53,9 @@ flowchart LR
     bot --> discord
 ```
 
-### W8 — consolidated monolith + moderation (still bidirectional on paper)
+### W8: consolidated monolith + moderation (still bidirectional on paper)
 
-After Sprint 1–2 consolidation into [`apps/bot`](apps/bot), we collapsed containers into one Python process, wired Deepgram for both ASR and TTS, and added moderation before any relay—driven by [PR #25](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/pull/25) and documented in [`docs/architechture-retrospective.md`](docs/architechture-retrospective.md) ([PR #26](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/pull/26)).
+After Sprint 1–2 consolidation into [`apps/bot`](apps/bot), we collapsed containers into one Python process, wired Deepgram for both ASR and TTS for further consolidation and consistency, and added moderation before any relay (based on red-team report feedback). This was driven by [PR #25](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/pull/25) and documented in [`docs/architechture-retrospective.md`](docs/architechture-retrospective.md) ([PR #26](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/pull/26)).
 
 ```mermaid
 flowchart TB
@@ -81,9 +81,9 @@ flowchart TB
     mod --> openai
 ```
 
-### Current — TTS-only at code freeze (`demo-night` tag)
+### Current: TTS-only at code freeze (`demo-night` tag)
 
-STT removed in [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88). Piper added in Sprint 3. Full as-built C4 in [`docs/architechture-retrospective.md`](docs/architechture-retrospective.md).
+The main change was that STT was removed in [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88) due to scope narrowing. Piper was also added in Sprint 3 for lower latency. Full as-built C4 in [`docs/architechture-retrospective.md`](docs/architechture-retrospective.md).
 
 ```mermaid
 flowchart TB
@@ -114,16 +114,16 @@ flowchart TB
 
 | Transition | What changed | Trigger | Repo link |
 |------------|--------------|---------|-----------|
-| W4 → W8 | Four containers → monolith; Deepgram replaces Piper/Whisper in practice | Team velocity; prototypes merged before API split | [`apps/bot/main.py`](apps/bot/main.py) |
-| W8 → W8+ | Moderation module on TTS (and STT) paths | Red-team Findings 2.2, 3.1 | [PR #25](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/pull/25), [`content_moderation.py`](apps/bot/content_moderation.py) |
-| W8 → current | STT path deleted; playback-only voice client | UDP/voice-recv complexity vs. demo deadline | [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88) |
-| W8 → current | Dual TTS providers (Deepgram + Piper) | Sprint 3 board [#31](https://github.com/orgs/CSEN-SCU/projects/4?pane=issue&itemId=190647187) | [`voice_preferences.py`](apps/bot/voice_preferences.py), [`09d68b1`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/09d68b1) |
+| W4 → W8 | We planned four separate pieces (bot, API, audio processing, Postgres), but merged them into a single `apps/bot` process. We also implemented Deepgram instead of the Piper/Whisper stack we had originally planned. | We needed a working bot sooner than we could split out a Companion API, so we consolidated the prototypes first. | [`apps/bot/main.py`](apps/bot/main.py) |
+| W8 → W8+ | We added a moderation step before anything gets read aloud—on both the TTS path and, at the time, STT. | The peer red-team review showed we could not safely relay chat or voice content without screening first (Findings 2.2 and 3.1). | [PR #25](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/pull/25), [`content_moderation.py`](apps/bot/content_moderation.py) |
+| W8 → current | We removed speech-to-text entirely. The bot joins voice only to play audio back. It no longer listens to or transcribes what people say. | Capturing and decoding Discord voice packets reliably turned out to be much harder than we expected, and we chose to ship one solid user story before demo night. | [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88) |
+| W8 → current | We added a second TTS option: self-hosted Piper alongside Deepgram, so users and operators are not locked to one provider. | Sprint 3 board ([#31](https://github.com/orgs/CSEN-SCU/projects/4?pane=issue&itemId=190647187)): Lower latency, more voice choice, and a path that does not depend on metered cloud TTS. | [`voice_preferences.py`](apps/bot/voice_preferences.py), [`09d68b1`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/09d68b1) |
 
 **Three code paths implementing architectural decisions:**
 
-1. **Message → TTS pipeline:** [`apps/bot/main.py`](apps/bot/main.py) `on_message` → `moderate_for_tts()` → `synthesize_text()` → `PlaybackCoordinator`
-2. **Per-guild serialization:** [`GuildMessageSerializer`](apps/bot/main.py) prevents overlapping TTS work per guild (latency-sensitive queue semantics)
-3. **Provider switch without stale voice IDs:** [`apply_tts_provider_switch()`](apps/bot/voice_preferences.py) in [`unittests/test_tts_provider_switch.py`](unittests/test_tts_provider_switch.py)
+1. **Text to voice:** When someone posts in the control channel, [`main.py`](apps/bot/main.py) runs the message through `moderate_for_tts()`, then `synthesize_text()`, then hands audio off to `PlaybackCoordinator`. It goes moderation first, speech second, then playback last.
+2. **One line at a time per server:** [`GuildMessageSerializer`](apps/bot/main.py) queues TTS work so messages in the same guild do not talk over each other because without that, overlapping synthesis would make live hangs hard to follow and listen.
+3. **Switching TTS providers cleanly:** When a user moves between Deepgram and Piper, [`apply_tts_provider_switch()`](apps/bot/voice_preferences.py) clears voice IDs that do not apply to the new provider. We cover that behavior in [`unittests/test_tts_provider_switch.py`](unittests/test_tts_provider_switch.py).
 
 **Repo reference:** [`architecture/architecture.md`](architecture/architecture.md) · [`docs/architechture-retrospective.md`](docs/architechture-retrospective.md) · tag [`demo-night`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/tree/demo-night) (`e76c197`)
 
@@ -138,27 +138,27 @@ flowchart TB
 | **Demo video** | https://youtu.be/iY03F8pIJqQ |
 | **Code freeze** | [`demo-night`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/tree/demo-night) → `e76c197` |
 
-### What it does
+### What TTSTT does today
 
-- **Voice session control** — `/join`, `/leave`, `/status` via [`SessionRegistry`](apps/bot/session_registry.py) in [`main.py`](apps/bot/main.py)
-- **Selective TTS listen** — `/tts_listen_user`, stop variants via [`TtsListenerRegistry`](apps/bot/tts_listener_registry.py)
-- **Per-user voice prefs (Postgres)** — `/tts_voice_set`, `/tts_voice_show`, `/tts_voice_reset` via [`voice_preferences.py`](apps/bot/voice_preferences.py)
-- **Dual TTS engines** — `/tts_provider_set` chooses Deepgram Aura or local Piper ([`tts.py`](apps/bot/tts.py), [`piper_tts.py`](apps/bot/piper_tts.py))
-- **Content safety** — link blocking, sensitive-pattern heuristics, optional OpenAI Moderation ([`content_moderation.py`](apps/bot/content_moderation.py))
-- **Sequential playback** — FIFO per-guild queue ([`playback.py`](apps/bot/playback.py))
-- **Public help** — `/help` → Netlify static site ([`docs/help/index.html`](docs/help/index.html))
+- **Voice session control:** `/join`, `/leave`, and `/status`, tracked through [`SessionRegistry`](apps/bot/session_registry.py) in [`main.py`](apps/bot/main.py)
+- **Selective TTS listen:** `/tts_listen_user` and the stop commands. Pick whose messages get read aloud via [`TtsListenerRegistry`](apps/bot/tts_listener_registry.py)
+- **Per-user voice prefs (Postgres):** `/tts_voice_set`, `/tts_voice_show`, `/tts_voice_reset` saved per server in [`voice_preferences.py`](apps/bot/voice_preferences.py)
+- **Dual TTS engines:** `/tts_provider_set` lets you choose Deepgram Aura or local Piper ([`tts.py`](apps/bot/tts.py), [`piper_tts.py`](apps/bot/piper_tts.py))
+- **Content safety:** link blocking, sensitive-pattern checks, and optional OpenAI Moderation before anything is spoken ([`content_moderation.py`](apps/bot/content_moderation.py))
+- **Sequential playback:** messages play in FIFO order, one guild at a time ([`playback.py`](apps/bot/playback.py))
+- **Public help:** `/help` opens our Netlify guide ([`docs/help/index.html`](docs/help/index.html))
 
-### What it does not do yet
+### What TTSTT does not do yet
 
-- Speech-to-text / live captions (removed; see [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88))
-- Separate Companion API container from W4 plan
-- Per-user TTS rate limiting (flagged in red-team Finding 1.4; follow-up not shipped)
-- Pronunciation control beyond speed/pitch/voice model selection
+- **Speech-to-text / live captions**: Removed ([`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88))
+- **Separate Companion API** from our Week 4 plan. The deployable bot is still one process
+- **Per-user TTS rate limiting**: Flagged in red-team Finding 1.4 but we did not ship a follow-up for team velocity
+- **Pronunciation control** beyond speed, pitch, and voice model selection
 
 ### Seams
 
-- **Monolith:** all orchestration in one process—simple to deploy, harder to scale TTS independently
-- **Moderation:** heuristic + optional API—not a full trust-and-safety pipeline ([`docs/architechture-retrospective.md` § Tech debt](docs/architechture-retrospective.md))
+- **Monolith:** all orchestration in one process. Simple to deploy, harder to scale TTS independently
+- **Moderation:** heuristic + optional API. Not a full trust-and-safety pipeline ([`docs/architechture-retrospective.md` § Tech debt](docs/architechture-retrospective.md))
 - **`architecture/architecture.md` still describes W4 target**; as-built diagrams live in [`docs/architechture-retrospective.md`](docs/architechture-retrospective.md)
 
 **Repo reference:** [`apps/bot/README.md`](apps/bot/README.md) · [`docs/demo-video-script.md`](docs/demo-video-script.md)
@@ -172,12 +172,12 @@ flowchart TB
 | | Planned (W5) | Implemented |
 |---|-------------|-------------|
 | **Strategy** | Red-green TDD on transcription and voice-connection seams ([`docs/sprint-1-testing.md`](docs/sprint-1-testing.md)) | 22 unit test modules under [`unittests/`](unittests/); CI runs full suite on every PR |
-| **Chose to test** | Domain contracts: enqueue rules, moderation dispositions, playback FIFO, provider switches, ethics-driven self-only stop | Representative: [`test_content_moderation.py`](unittests/test_content_moderation.py), [`test_playback_queue.py`](unittests/test_playback_queue.py), [`test_stop_listening_self_only.py`](unittests/test_stop_listening_self_only.py) |
-| **Chose not to test** | Live Discord Gateway, real UDP voice receive, end-to-end guild flows | Deferred to manual guild testing; live Deepgram test gated behind `RUN_LIVE_DEEPGRAM_TEST=1` ([`test_tts_deepgram_live.py`](unittests/test_tts_deepgram_live.py)) |
+| **Chose to test** | The logic we could isolate without Discord running such as who gets queued for TTS, what moderation allows through, playback order, provider switches, and the ethics rule that users can only stop listening to themselves | Examples in the repo: [`test_content_moderation.py`](unittests/test_content_moderation.py), [`test_playback_queue.py`](unittests/test_playback_queue.py), [`test_stop_listening_self_only.py`](unittests/test_stop_listening_self_only.py) |
+| **Chose not to test** | Live Discord Gateway traffic, real UDP voice capture, and full end-to-end guild flows | We relied on manual testing in a real server instead; the only live Deepgram check is opt-in via `RUN_LIVE_DEEPGRAM_TEST=1` ([`test_tts_deepgram_live.py`](unittests/test_tts_deepgram_live.py)) |
 
-**Methodical example:** After red-team Finding 3.1, we wrote [`test_tts_blocks_sensitive_and_urls`](unittests/test_content_moderation.py) *before* expanding heuristics—asserting `Disposition.BLOCKED` for self-harm phrasing and URLs, `PUBLIC` for benign chat. That test still guards the hot path called from [`main.py`](apps/bot/main.py) on every listened message.
+**Methodical example:** When red-team Finding 3.1 flagged sensitive content being read aloud, we wrote [`test_tts_blocks_sensitive_and_urls`](unittests/test_content_moderation.py) first, then expanded the heuristics to make it pass. The test checks that self-harm phrasing and URLs get `Disposition.BLOCKED`, while normal chat stays `PUBLIC`. It still runs on every listened message through [`main.py`](apps/bot/main.py).
 
-**AI vs. human:** Cursor drafted initial pytest scaffolding and CI YAML ([`docs/sprint-1-retro.md`](docs/sprint-1-retro.md)); humans fixed import paths (`apps.bot`), removed brittle call-log assertions in favor of behavior contracts ([`docs/sprint-1-testing.md` § Before/After diff](docs/sprint-1-testing.md)), and decided which STT tests to retire when STT was cut ([`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88)).
+**AI vs. human:** Cursor helped us draft early pytest scaffolding and CI YAML ([`docs/sprint-1-retro.md`](docs/sprint-1-retro.md)). We fixed import paths (`apps.bot`), swapped brittle call-log checks for tests that assert behavior ([`docs/sprint-1-testing.md` § Before/After diff](docs/sprint-1-testing.md)), and chose which STT tests to drop once we cut speech-to-text ([`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88)).
 
 ### Security
 
@@ -189,7 +189,7 @@ flowchart TB
 | **Accepted risk** | **1.1** Unversioned git dependency | Resolved by removing `discord-ext-voice-recv` with STT cut ([`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88)) |
 | **Accepted risk** | **1.4** No TTS rate limit | Documented; not shipped before freeze |
 
-**AI vs. human:** AI suggested generic moderation patterns; humans selected crisis keywords (988 routing intent), decided `/tts_stop_listening` must be self-only per ethics review ([`0dc3581`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/0dc3581), [`docs/ethics-reflection.md`](docs/ethics-reflection.md)), and scoped fixes to `apps/bot` rather than reopening prototype trees.
+**AI vs. human:** AI gave us a starting list of generic moderation patterns. We chose which crisis keywords to block, including phrasing that should route people toward 988 hotline, and, after our ethics review, limited `/tts_stop_listening` so users can only stop the bot from listening to themselves ([`0dc3581`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/0dc3581), [`docs/ethics-reflection.md`](docs/ethics-reflection.md)). We also kept the fixes in `apps/bot` instead of going back to patch old prototype folders.
 
 ### Deployment
 
@@ -210,23 +210,23 @@ flowchart TB
 
 ### Successes
 
-1. **Red-team findings → shipped moderation in one sprint.** SmartShop's Finding 3.1 role-play (self-harm spoken in VC) became [`content_moderation.py`](apps/bot/content_moderation.py) and tests in [PR #25](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/pull/25). *Keep:* translate peer review scenarios directly into failing tests before writing fixes.
+1. **Red-team findings → shipped moderation in one sprint.** SmartShop's Finding 3.1 role-play had crisis language spoken in voice that would get relayed to the whole guild. We wrote failing tests for that scenario first, then merged [`content_moderation.py`](apps/bot/content_moderation.py) in [PR #25](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/pull/25) the same sprint. It worked because the harm case was concrete, not abstract. **Practice to keep:** turn peer review scenarios into failing tests before writing fixes.
 
-2. **Consolidated deployable bot from three prototypes.** Per-member spikes under `prototypes/` merged into [`apps/bot`](apps/bot) with Postgres-backed prefs and a single command surface. *Keep:* one `main.py` entrypoint and explicit registries instead of parallel bot copies.
+2. **Three prototypes became one deployable bot.** We were building in parallel under `prototypes/`; Sprint 2 pulled that into [`apps/bot`](apps/bot) with Postgres-backed voice prefs and a single slash-command surface. It worked because we stopped maintaining forked bot copies and pointed fixes at one tree. **Practice to keep:** one `main.py` entrypoint and small registries (`SessionRegistry`, `TtsListenerRegistry`) instead of another prototype folder.
 
-3. **Dual TTS providers landed Sprint 3.** `/tts_provider_set` switches Deepgram ↔ Piper with voice-ID reset logic ([`09d68b1`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/09d68b1)). *Keep:* provider interface in [`tts.py`](apps/bot/tts.py) so swapping engines does not touch Discord handlers.
+3. **Dual TTS landed in Sprint 3.** `/tts_provider_set` lets users switch between Deepgram Aura and self-hosted Piper, with voice IDs reset when the provider changes ([`09d68b1`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/09d68b1)): the commitment from our Sprint 2 retro. It worked because provider logic lives in [`tts.py`](apps/bot/tts.py) and [`piper_tts.py`](apps/bot/piper_tts.py), not scattered through Discord handlers. **Practice to keep:** that provider boundary when we add or swap engines.
 
 ### Setbacks
 
-1. **STT blocked on Discord UDP packet handling.** Noelle integrated Deepgram ASR, but reliable utterance capture via `discord-ext-voice-recv` failed during consolidation ([`docs/sprint-2-retro.md`](docs/sprint-2-retro.md)). *Missed signal:* prototype STT worked in a narrow guild setup but not under multi-speaker load. *Would do differently:* spike UDP ingress limits in Sprint 1 before committing to bidirectional vision. *Visible in:* STT commits [`3b4c947`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/3b4c947) → removal [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88).
+1. **STT blocked on Discord UDP packet handling.** Noelle integrated Deepgram ASR in prototype, but reliable utterance capture through `discord-ext-voice-recv` broke down when we merged into `apps/bot` ([`docs/sprint-2-retro.md`](docs/sprint-2-retro.md)). **Why it happened:** Discord's UDP voice path is finicky, and our prototype only proved STT in a narrow single-guild setup. **Missed signal:** it failed under multi-speaker load long before demo night, but we kept debugging instead of cutting scope. **Would do differently:** time-box a UDP ingress spike in Sprint 1 before committing to bidirectional TTS+STT in the vision. **Visible in:** STT work [`3b4c947`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/3b4c947) → removal [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88).
 
-2. **Sprint 1 Kanban over-scoped.** Cards listed work too far ahead of working CI and test seams ([`docs/sprint-1-retro.md`](docs/sprint-1-retro.md)). *Missed signal:* half the board stayed "In Progress" while one member blocked on voice intents. *Would do differently:* cap cards to one lab's worth of work with mandatory assignees ([Sprint 2 commitment](https://github.com/orgs/CSEN-SCU/projects/4/views/1?pane=issue&itemId=186839589)).
+2. **Sprint 1 Kanban listed work we could not start yet.** Cards jumped ahead of working CI and test seams ([`docs/sprint-1-retro.md`](docs/sprint-1-retro.md)). **Why it happened:** we planned the quarter on the board before the groundwork was green. **Missed signal:** half the board stayed "In Progress" while one member was blocked on Discord voice intents and the rest could not land their pieces. **Would do differently:** cap cards to one lab's worth of work with a named assignee on each ([Sprint 2 commitment](https://github.com/orgs/CSEN-SCU/projects/4/views/1?pane=issue&itemId=186839589)).
 
-3. **TTS rate limiting never shipped.** Red-team Finding 1.4 flagged unbounded queue abuse; Sprint 2 retro noted it still in progress ([`docs/sprint-2-retro.md`](docs/sprint-2-retro.md)). *Missed signal:* no board card reached "Done" with a failing test for cooldown. *Visible in:* open follow-up on [Sprint board #31 area](https://github.com/orgs/CSEN-SCU/projects/4).
+3. **TTS rate limiting never shipped.** Red-team Finding 1.4 flagged unbounded queue abuse; our Sprint 2 retro still listed cooldown work as in progress ([`docs/sprint-2-retro.md`](docs/sprint-2-retro.md)). **Why it happened:** Piper and voice prefs pulled Sprint 3 focus, and rate limiting never got a card to "Done" with a failing test behind it. **Missed signal:** we talked about Finding 1.4 in retro notes but did not treat "no failing cooldown test" as a stop-ship for freeze. **Would do differently:** keep one red-team follow-up card on the board with an explicit definition of done before picking up new features. **Visible in:** open follow-up on the [Sprint board](https://github.com/orgs/CSEN-SCU/projects/4).
 
 ### AI tools across the quarter
 
-AI accelerated **CI scaffolding** and **first-draft tests** ([`docs/sprint-1-retro.md`](docs/sprint-1-retro.md)), but we had to **override** it when it generated plausible-but-wrong Discord intent assumptions and brittle call-order assertions ([`docs/sprint-1-testing.md`](docs/sprint-1-testing.md)). AI also proposed keeping STT in the monolith; humans **unwound** that path after a week of UDP debugging and explicitly deleted 700+ lines of STT code rather than shipping a flaky demo feature ([`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88)).
+Cursor helped early when we needed repeatable checks fast as it drafted pytest scaffolding in files like `unittests/test_bot_runtime_config_and_sync.py` and the first pass at [`.github/workflows/ci.yml`](.github/workflows/ci.yml) ([`docs/sprint-1-retro.md`](docs/sprint-1-retro.md)). We had to override it whenever output looked plausible but was not correct: wrong `apps.bot` import paths, brittle call-order assertions we replaced with behavior checks ([`docs/sprint-1-testing.md`](docs/sprint-1-testing.md)), and CI YAML that failed until we fixed env vars and test paths. The biggest unwind came in Sprint 2, when AI-assisted consolidation kept STT in the monolith while we burned a week on UDP debugging, but we deleted 700+ lines of STT code in [`ac70a88`](https://github.com/CSEN-SCU/csen-174-s26-team-project-ttstt/commit/ac70a88) rather than ship a flaky caption feature for demo night.
 
 **Repo reference:** [`docs/sprint-1-retro.md`](docs/sprint-1-retro.md) · [`docs/sprint-2-retro.md`](docs/sprint-2-retro.md) · [Sprint board](https://github.com/orgs/CSEN-SCU/projects/4)
 
@@ -250,8 +250,8 @@ Items 1 and 5 are **research problems** (Discord voice receive semantics, modera
 
 ## 7. Advice to future CSEN 174 teams
 
-1. **Write the failing test for your red-team scenario before the fix**—our moderation module stayed small because Finding 3.1 became [`test_tts_blocks_sensitive_and_urls`](unittests/test_content_moderation.py) first.
-2. **Cut scope in writing when a spike fails**, not silently—deleting `stt.py` only worked because we updated [`docs/product-vision.md`](docs/product-vision.md) and the architecture retrospective in the same commit.
-3. **Treat AI output as a draft until it runs in CI**—our Sprint 1 workflow looked correct until a human fixed imports and scoped secrets to the pytest step.
+1. When peer review gives you a concrete harm scenario, write the failing test first as Finding 3.1 became [`test_tts_blocks_sensitive_and_urls`](unittests/test_content_moderation.py) before we grew [`content_moderation.py`](apps/bot/content_moderation.py), and that kept the fix small.
+2. If a spike fails, cut scope in writing in the same commit you delete the code, as we only made the STT removal stick because we updated [`docs/product-vision.md`](docs/product-vision.md) and the architecture retrospective alongside deleting `stt.py`.
+3. Do not trust AI-generated tests or CI until green runs on GitHub, as our Sprint 1 workflow looked fine on paper until someone fixed `apps.bot` imports and scoped secrets to the pytest step.
 
 ---
